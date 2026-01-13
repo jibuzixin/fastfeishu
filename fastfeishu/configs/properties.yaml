@@ -1,0 +1,37 @@
+feishu:
+  links:
+    baseUrl: https://open.feishu.cn/open-apis
+    auth:
+      target: auth
+      tenantToken:
+        url: auth/v3/tenant_access_token/internal
+    media:
+      target: drive
+      imageDownload:
+        url: drive/v1/medias/{FILE_TOKEN}/download
+    sheets:
+      target: sheets
+      metainfo:
+        url: sheets/v2/spreadsheets/{SHEET_TOKEN}/metainfo
+      read:
+        url: sheets/v2/spreadsheets/{SHEET_TOKEN}/values
+      insert:
+        url: sheets/v2/spreadsheets/{SHEET_TOKEN}/values_prepend
+      write:
+        url: sheets/v2/spreadsheets/{SHEET_TOKEN}/values
+      append:
+        url: sheets/v2/spreadsheets/{SHEET_TOKEN}/values_append
+      sheetsBatchUpdate:
+        url: sheets/v2/spreadsheets/{SHEET_TOKEN}/sheets_batch_update
+      deleteSeries:
+        url: sheets/v2/spreadsheets/{SHEET_TOKEN}/dimension_range
+      appendSeries:
+        url: sheets/v2/spreadsheets/{SHEET_TOKEN}/dimension_range
+      writeImage:
+        url: sheets/v2/spreadsheets/{SHEET_TOKEN}/values_image
+      style:
+        url: sheets/v2/spreadsheets/{SHEET_TOKEN}/style
+    workBook:
+      target: work
+      create:
+        url: work/v3/spreadsheets
