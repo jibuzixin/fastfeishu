@@ -178,7 +178,7 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         else:
             return ''
 
-    def iter_rows(
+    def iterrows(
         self,
         start_row: int = 2,
         end_row: Optional[int] = None,
@@ -194,7 +194,7 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
 
         Example:
             >>> # noinspection PyUnresolvedReferences
-            >>> for row in sheet.iter_rows(start_row=2):
+            >>> for row in sheet.iterrows(start_row=2):
             >>>     print(row[0], row[1])          # List 模式
             >>>     # 或
             >>>     print(row["姓名"], row["年龄"]) # dict 模式（推荐）

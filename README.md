@@ -72,7 +72,7 @@ from fastfeishu.feishu import FeiShuSheet
 
 if __name__ == '__main__':
     s = FeiShuSheet('飞书链接', readonly=True)  # 为 True 只读模式
-    for row in s.iter_rows():
+    for row in s.iterrows():
         print(row['CaseID'], row['query'], row['预期APIINFO'])
 ```
 读取单元格 A2 图片
@@ -203,7 +203,7 @@ class CustomIter:
             l[i]['t'] = 'hhh'
             yield l[i]
 
-for i in Custom().iter_rows(0):
+for i in Custom().iterrows(0):
     print(i)
 
 FeiShuUtil.process_rows_to_new_sheet(CustomIter, target_sheet, row_handler=even_insert_handler)
