@@ -5,6 +5,7 @@ from typing import Union, Any, Optional, List, Generator, Dict, Literal
 from fastfeishu.utils import num_to_excel_col
 from fastfeishu.exceptions.exception import FeiShuColumnNotExist, FeiShuException
 from fastfeishu.core.interface import FeiShuInterface
+from fastfeishu.utils.common import match_row_num_by_range, match_col_letter_by_range, excel_col_to_num
 
 
 class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
@@ -74,9 +75,9 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         return del_count
 
     def write_column(
-            self, column_name: str,
-            data_list: List[Any],
-            start_row: int=2,
+        self, column_name: str,
+        data_list: List[Any],
+        start_row: int=2,
     ):
         """
         根据列名写入一列数据，如果列存在则覆盖写入，不存在则在行或列的末尾追加一列然后写入。
@@ -93,9 +94,9 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         self.write(f'{col_letter}{start_row}:{col_letter}{len(data_list)+start_row-1}', data_list)
 
     def write_row(
-            self,
-            data: List[Union[List[Any], Dict[str, Any]]],
-            write_row: int = 2,
+        self,
+        data: List[Union[List[Any], Dict[str, Any]]],
+        write_row: int = 2,
     ):
         """
         写入一行或者多行数据，如果是多行需要用数组包装。
@@ -131,6 +132,56 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
                 raise ValueError(f"需要写入的值可以是二维数组、数组[字典]。当前数组元素类型是: {type(row)}")
 
         cell_range = f'A{write_row}:{num_to_excel_col(heads_len)}{len(write_list)+write_row-1}'
+        self.write(cell_range, write_list)
+
+    def write_row_by_hang_header(
+        self,
+        hang_header_range: str,
+        data: List[Union[List[Any], Dict[str, Any]]],
+        write_row: int = 2,
+    ):
+        """
+        根据指定的“悬挂表头”写入行数据。即：可以指定任意一行范围内的数据为临时表头，并按照此表头写入数据。
+
+        Note:
+            - 如果表头之间有不想写入的数据，应该分为若干个“悬挂头”分别写入，此方法不能自动跳过不想写入的数据
+
+        Args:
+            hang_header_range: 悬挂头的范围（ 如：C22:JK22, DF345:DL345 ），一个行范围，多行报错
+            data: 需要写入的值可以是二维数组、数组[字典]
+            write_row: 相对于悬挂头来说的开始行数，悬挂头为第 1 行，默认开始从第 2 行写入
+        """
+        if write_row <= 1:
+            raise ValueError(f"write_row")
+        # 1. 判断行的范围是否正确
+        a, b = match_row_num_by_range(hang_header_range)
+        if a != b:
+            raise ValueError(f"hang_header 参数单元格范围表示应该为一行数据的范围，如：A2:F2。当前为：{hang_header_range}")
+        write_row = int(a) + write_row - 1  # 写入数据相对于表头的偏移量
+
+        # 2. 校验输入 range 正确
+        start_col, end_col = match_col_letter_by_range(hang_header_range)
+        start_col_num = excel_col_to_num(start_col)
+        end_col_num = excel_col_to_num(end_col)
+        if end_col_num < start_col_num:
+            raise ValueError(f"输入 hang_header 数据范围有误，当前 {end_col} 比 {start_col} 要小，输入数据: {hang_header_range}")
+
+        # 3. 获取行的内容作为临时表头
+        header = self.read_human(hang_header_range)[0]
+
+        # 4. 将数据按照表头对齐
+        write_list = []
+        for row in data:
+            if isinstance(row, dict):
+                write_list.append([row[col_name] if col_name in row.keys() else None
+                                   for col_name in header])
+            elif isinstance(row, list):
+                row = (row + [None] * len(header))[:len(header)]
+                write_list.append(row)
+            else:
+                raise ValueError(f"需要写入的值可以是二维数组、数组[字典]。当前数组元素类型是: {type(row)}")
+        # 5. 写入数据
+        cell_range = f'{start_col}{write_row}:{end_col}{len(write_list) + write_row - 1}'
         self.write(cell_range, write_list)
 
     def replace_placeholder(self, sheet_range: str, **kwargs):

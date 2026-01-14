@@ -19,6 +19,13 @@ def match_row_num_by_range(s: str) -> Tuple[str, str]:
     matches = re.findall(pattern, s)
     return matches[0], matches[1]
 
+def match_col_letter_by_range(s: str) -> Tuple[str, str]:
+    """例如 Ac12:B3 匹配到列索引: 'AC', 'B'"""
+    pattern = r'([a-zA-Z]+)\d+:([a-zA-Z]+)\d'
+    matches = re.findall(pattern, s)
+    for match in matches:
+        return str(match[0]).upper(), str(match[1]).upper()
+
 def sample_from_array(labels_array, label_config=None, max_samples=None):
     """
     根据提供的标签数组、标签配置和最大采样数进行随机抽取。
@@ -107,6 +114,19 @@ def num_to_excel_col(n: int) -> str:
         chars.append(chr(ord('A') + n % 26))
         n //= 26
     return ''.join(reversed(chars))
+
+
+def excel_col_to_num(col: str) -> int:
+    """
+    将 Excel 列字母转成 1-based 列号
+    例如 'A' -> 1, 'Z' -> 26, 'AA' -> 27, 'ZZ' -> 702, 'AAA' -> 703
+    """
+    if not col.isalpha():
+        raise ValueError("列名必须是英文字母")
+    num = 0
+    for char in col.upper():  # 将输入统一转换为大写
+        num = num * 26 + (ord(char) - ord('A') + 1)
+    return num
 
 def get_real_extension_from_bytes(data: bytes) -> str:
     """
@@ -325,4 +345,7 @@ async def example_batch_download():
 
 if __name__ == "__main__":
     # asyncio.run(example_batch_download())
-    example_json()
+    # example_json()
+    a, b = match_col_letter_by_range('C22:ab22')
+    print(excel_col_to_num(a))
+    print(excel_col_to_num(b))

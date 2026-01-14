@@ -1,4 +1,4 @@
-from .little_utils import (
+from .common import (
     sample_from_array,
     extract_json_content,
     num_to_excel_col,
