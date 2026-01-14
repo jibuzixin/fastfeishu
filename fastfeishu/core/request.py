@@ -4,6 +4,7 @@ from typing import Union
 from dotenv import load_dotenv
 from urllib.parse import urlparse, parse_qs
 
+from fastfeishu.models import SheetProperties
 from requests import Response
 
 from fastfeishu.configs.settings import get_feishu_property
@@ -305,6 +306,32 @@ class FeiShuRequest:
                     "copySheet": {
                         "source": {"sheetId": self.sheet_id},
                         "destination": {"title": title}
+                    }
+                }
+            ]
+        }
+        response = requests.post(url, headers=self._get_request_headers(), data=json.dumps(body))
+        response.raise_for_status()
+        return response
+
+    def update_sheet_properties(self, properties: SheetProperties) -> requests.Response:
+        """
+        [操作工作表-复制sheet](https://open.feishu.cn/document/server-docs/docs/sheets-v3/spreadsheet-sheet/operate-sheets) \n
+
+        :param title: 新 sheet 的名称
+        :param index: 新 sheet 在表中的索引位置，默认为 0 第一个
+        """
+        properties_dict = properties.to_dict()
+        properties_dict.update({"sheetId": self.sheet_id})
+
+        url = self._build_url(
+            self.link_sheets.sheetsBatchUpdate.format(SHEET_TOKEN=self.sheet_token).human_repr(),
+        )
+        body = {
+            "requests": [
+                {
+                    "updateSheet": {
+                        "properties": properties_dict,
                     }
                 }
             ]

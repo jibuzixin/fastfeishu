@@ -2,6 +2,7 @@ import requests
 
 from io import BytesIO
 from typing import Any, Dict, List, Literal, Union, Self
+from fastfeishu.models import SheetProperties
 from yarl import URL
 from pathlib import Path
 from PIL import Image
@@ -170,6 +171,11 @@ class FeiShuSheetOperations:
         new_sheet_id = _response_json(response)["data"]["replies"][0]["copySheet"]["properties"]["sheetId"]
         new_link = str(URL(self.link).update_query(sheet=new_sheet_id))
         return type(self)(new_link)
+
+    def update_sheet_properties(self, properties: SheetProperties):
+        self._deny_if_readonly()
+        response = self._request.update_sheet_properties(properties)
+        _response_json(response)
 
     # -------------------------------------- 设置样式 --------------------------------------------
     def set_style(self, sheet_range: str, style: dict[str, Any]):
