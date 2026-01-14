@@ -33,7 +33,7 @@ class FeiShuInterface(abc.ABC):
     def delete_series_by_index(self, start_index: str | int, end_index: str | int): ...
 
 class IterableSheetProtocol(Protocol):
-    def iter_rows(
+    def iterrows(
         self,
         start_row: int = 2,
         end_row: Optional[int] = None,

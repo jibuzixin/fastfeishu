@@ -46,7 +46,7 @@ class FeiShuUtil:
         header_written = False
         buffer: List[Dict[str, Any]] = []  # 待写入的缓冲
 
-        for row in source_sheet.iter_rows(
+        for row in source_sheet.iterrows(
             start_row=start_row,
             end_row=end_row,
         ):
