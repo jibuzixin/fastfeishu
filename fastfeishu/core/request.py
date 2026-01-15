@@ -8,7 +8,7 @@ from fastfeishu.models import SheetProperties
 from requests import Response
 
 from fastfeishu.configs.settings import get_feishu_property
-from fastfeishu.models.type import Formula
+from fastfeishu.models.type import Formula, FeiShuCellType
 from fastfeishu.utils.common import base64_image
 from fastfeishu.exceptions.exception import FeiShuException
 from fastfeishu.models.feishu_var import FeishuVariable
@@ -199,7 +199,9 @@ class FeiShuRequest:
 
         for r, row in enumerate(data_list):
             for c, item in enumerate(row):
-                if isinstance(item, float) and math.isnan(item):
+                if isinstance(item, FeiShuCellType):
+                    data_list[r][c] = item.to_json()
+                elif isinstance(item, float) and math.isnan(item):
                     data_list[r][c] = None
                 elif item is None or isinstance(item, (int, float, bool)):
                     continue
