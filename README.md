@@ -193,7 +193,7 @@ l = [
 ]
 class CustomIter:
     @staticmethod
-    def iter_rows(
+    def iterrows(
             start_row: int,
             end_row: Optional[int] = None,
     ) -> Generator[dict[str, int], None, None]:
