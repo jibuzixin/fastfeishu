@@ -48,6 +48,7 @@ class SheetsSettings(BaseSettings):
     # delete: LinkAttribute
     appendSeries: LinkAttribute
     deleteSeries: LinkAttribute
+    insertSeries: LinkAttribute
     writeImage: LinkAttribute
     style: LinkAttribute
 

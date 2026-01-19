@@ -9,7 +9,7 @@ from PIL import Image
 
 from fastfeishu.core import FeiShuRequest
 from fastfeishu.exceptions.exception import FeiShuException, FeiShuRequestException
-from fastfeishu.utils.common import match_row_num_by_range, base64_image, num_to_excel_col
+from fastfeishu.utils.common import match_row_num_by_range, base64_image, num_to_excel_col, excel_col_to_num
 
 
 def _response_json(response: requests.Response) -> Dict[str, Any]:
@@ -150,6 +150,20 @@ class FeiShuSheetOperations:
             self._alter_header = True
             col_index = len(self.get_header())
             return num_to_excel_col(col_index)
+
+    def insert_series(
+        self,
+        start_index: int,
+        end_index: int,
+        major_dimension: Literal["ROWS", "COLUMNS"] = "ROWS",
+        inherit_style: Literal["BEFORE", "AFTER", ""] = ''
+    ):
+        """插入行列的入口方法，控制一些权限操作，所有插入行列高级抽象方法都引用此函数"""
+        self._deny_if_readonly()
+        response = self._request.insert_series(start_index, end_index, major_dimension, inherit_style)
+        _response_json(response)
+        if major_dimension.upper() == "COLUMNS":
+            self._alter_header = True
 
     def write_image(self, cell, image, image_name="cell.png"):
         self._deny_if_readonly()

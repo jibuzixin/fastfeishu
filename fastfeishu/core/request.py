@@ -1,4 +1,4 @@
-from typing import Union, Dict, Any, List, Tuple
+from typing import Union, Dict, Any, List, Tuple, Literal
 import os, re, json, requests
 from typing import Union
 from dotenv import load_dotenv
@@ -391,6 +391,39 @@ class FeiShuRequest:
                 "majorDimension": major_dimension.upper(),
                 "length": add_count,
             }
+        }
+        response = requests.post(url, headers=self._get_request_headers(), data=json.dumps(body))
+        response.raise_for_status()
+        return response
+
+    def insert_series(
+        self, start_index: int, end_index: int, major_dimension="ROWS", inherit_style: str='',
+    ):
+        """
+        [插入行列](https://open.feishu.cn/document/server-docs/docs/sheets-v3/sheet-rowcol/insert-rows-or-columns)
+
+        :param start_index: 插入的行或列的起始位置。从 0 开始计数。若 ``startIndex`` 为 3，则从第 4 行或列开始插入空行或列。包含第 4 行或列。
+
+        :param end_index: 插入的行或列结束的位置。从 0 开始计数。若 ``endIndex`` 为 7，则从第 8 行结束插入行。第 8 行不再插入空行。
+            示例：当 ``majorDimension`` 为 ROWS、 ``startIndex`` 为 3、``endIndex`` 为 7 时，则在第 4、5、6、7 行插入空白行，共插入 4 行。
+
+        :param major_dimension: ROWS 或 COLUMNS ，默认 ROWS
+
+        :param inherit_style: 插入的空白行或列是否继承表中的单元格样式。不填或设置为空即不继承任何样式，为默认空白样式。可选值：
+        - BEFORE：继承起始位置的单元格的样式
+        - AFTER：继承结束位置的单元格的样式
+        """
+        url = self._build_url(
+            self.link_sheets.insertSeries.format(SHEET_TOKEN=self.sheet_token).human_repr(),
+        )
+        body = {
+            "dimension": {
+                "sheetId": self.sheet_id,
+                "majorDimension": major_dimension.upper(),
+                "startIndex": start_index,
+                "endIndex": end_index,
+            },
+            "inheritStyle": inherit_style,
         }
         response = requests.post(url, headers=self._get_request_headers(), data=json.dumps(body))
         response.raise_for_status()

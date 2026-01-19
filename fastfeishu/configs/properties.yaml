@@ -27,6 +27,8 @@ feishu:
         url: sheets/v2/spreadsheets/{SHEET_TOKEN}/dimension_range
       appendSeries:
         url: sheets/v2/spreadsheets/{SHEET_TOKEN}/dimension_range
+      insertSeries:
+        url: sheets/v2/spreadsheets/{SHEET_TOKEN}/insert_dimension_range
       writeImage:
         url: sheets/v2/spreadsheets/{SHEET_TOKEN}/values_image
       style:

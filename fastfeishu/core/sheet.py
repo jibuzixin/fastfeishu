@@ -194,6 +194,32 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         # TODO 改成写多范围可以提升意料之外情况的影响
         self.write(sheet_range, read_range)
 
+    def insert_column_to_right(
+        self,
+        column_letter: str,
+        insert_number: int = 1,
+        inherit_style: bool = True,
+    ):
+        """向指定列左边插入指定数量的空列，inherit_style 为 True 表示插入列是否复制起始列的单元格样式。"""
+        col_num = excel_col_to_num(column_letter)
+        if inherit_style:
+            self.insert_series(col_num, col_num + insert_number, "COLUMNS", "BEFORE")
+        else:
+            self.insert_series(col_num, col_num + insert_number, "COLUMNS")
+
+    def insert_column_to_left(
+        self,
+        column_letter: str,
+        insert_number: int = 1,
+        inherit_style: bool = True,
+    ):
+        """向指定列右边插入指定数量的空列，inherit_style 为 True 表示插入列是否复制起始列的单元格样式。"""
+        col_num = excel_col_to_num(column_letter) - 1
+        if inherit_style:
+            self.insert_series(col_num, col_num + insert_number, "COLUMNS", "AFTER")
+        else:
+            self.insert_series(col_num, col_num + insert_number, "COLUMNS")
+
     # ------------------------------------- 读操作 ---------------------------------------------
 
     def _cell_value_type_judge(self, cell: Union[Dict, List, str, bool]) -> str:

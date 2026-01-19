@@ -3,7 +3,8 @@ from typing import (
     Generator,
     Union,
     Optional,
-    List, Any, Dict)
+    List, Any, Dict,
+    Literal,)
 import pandas as pd
 import abc
 
@@ -77,6 +78,25 @@ class FeiShuInterface(abc.ABC):
 
     @abc.abstractmethod
     def replace_placeholder(self, sheet_range: str, **kwargs): ...
+
+    @abc.abstractmethod
+    def insert_column_to_right(
+            self,
+            column_letter: str,
+            insert_number: int = 1,
+            inherit_style: bool = True,
+    ): ...
+
+    @abc.abstractmethod
+    def insert_column_to_left(
+            self,
+            column_letter: str,
+            insert_number: int = 1,
+            inherit_style: bool = True,
+    ): ...
+
+    @abc.abstractmethod
+    def delete_series(self, start_index, end_index, major_dimension: Literal["ROWS", "COLUMNS"] = "ROWS") -> int: ...
 
 class IterableSheetProtocol(Protocol):
     def iterrows(
