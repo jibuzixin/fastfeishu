@@ -1,9 +1,10 @@
 from dataclasses import dataclass, field, asdict
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Literal
+
 
 @dataclass
 class Protect:
-    lock: Optional[str] = None
+    lock: Optional[bool] = None
     lock_info: Optional[str] = None
     user_ids: List[str] = field(default_factory=list)
 
@@ -15,8 +16,11 @@ class Protect:
         def __init__(self):
             self.protect = Protect()
 
-        def lock(self, lock: str):
-            self.protect.lock = lock
+        def lock(self, lock: bool=True):
+            if lock:
+                self.protect.lock = "LOCK"
+            else:
+                self.protect.lock = "UNLOCK"
             return self
 
         def lock_info(self, lock_info: str):
@@ -32,6 +36,7 @@ class Protect:
 
 @dataclass
 class SheetProperties:
+    """"""
     sheet_id: Optional[str] = None
     title: Optional[str] = None
     index: Optional[int] = None

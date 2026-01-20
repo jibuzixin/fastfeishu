@@ -16,7 +16,9 @@ def _response_json(response: requests.Response) -> Dict[str, Any]:
     response_json: Dict[str, Any] = response.json()
     # TODO 增加通过栈获取是哪个请求调用的，方便记录
     if response_json["code"] != 0:
-        raise FeiShuRequestException(f"\n>>>\tcode: {response_json['code']}\n>>>\tmsg: {response_json['msg']}")
+        raise FeiShuRequestException(f"\n>>>\tcode: {response_json['code']}"
+                                     f"\n>>>\tmsg: {response_json['msg']}"
+                                     f"\n>>>\t飞书通用异常情况查看：https://open.feishu.cn/document/server-docs/api-call-guide/generic-error-code")
     return response_json
 
 class FeiShuSheetOperations:
@@ -121,7 +123,7 @@ class FeiShuSheetOperations:
         _response_json(response)
         self._detect_header_modification(sheet_range)
 
-    def delete_series(self, start_index, end_index, major_dimension: Literal["ROWS", "COLUMNS"] = "ROWS") -> int:
+    def delete_series(self, start_index: int, end_index: int, major_dimension: Literal["ROWS", "COLUMNS"] = "ROWS") -> int:
         """返回删除行或者列的数量"""
         self._deny_if_readonly()
         response = self._request.delete_series(start_index, end_index, major_dimension)

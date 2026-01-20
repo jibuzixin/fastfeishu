@@ -1,7 +1,7 @@
 import pandas as pd
 
 from fastfeishu.core.operations import FeiShuSheetOperations
-from typing import Union, Any, Optional, List, Generator, Dict, Literal
+from typing import Union, Any, Optional, List, Generator, Dict, Literal, Type
 from fastfeishu.utils import num_to_excel_col
 from fastfeishu.exceptions.exception import FeiShuColumnNotExist, FeiShuException
 from fastfeishu.core.interface import FeiShuInterface
@@ -16,7 +16,7 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
 
     def get_index_by_col_name(self, col_name: str) -> int:
         """
-        根据列名获取对应列的数字索引，起始序号为 0。
+        根据列名获取对应列的数字索引，起始序号为 1。
         例如：get_index_by_col_name("端到端回复") -> 6, 将会返回“端到端回复”列在第六列。
 
         Note:
@@ -45,17 +45,17 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         end_index: Union[str, int]=None,
     ) -> int:
         """
-        删除行或者列，如果 ``start_index`` 和 ``end_index`` 都是字符串，表明删除对应列名区间的列，如果都是整数删除对应区间的行。
+        删除行或者列，如果 ``start_index`` 和 ``end_index`` 都是字符串，表明删除对应字母区间的列，如果都是整数删除对应区间的行。
 
-        如果只填写 ``start_index`` 只删除单独这一列。
+        如果只填写 ``start_index`` 只删除单独这一列/行。
 
         Note:
             - 当表头有相同的重复名字的话，从左到右默认取第一个，避免使用相同表头名（列名）
-            - 列名不存在的话抛出 ``FeiShuColumnNotExist`` 异常
+            - 从 1 开始计数，左右都是闭区间
 
         Args:
-            start_index: 可以是：<列名>、行数8/9/23
-            end_index: 可以是：<列名>、行数8/9/23
+            start_index: 可以是：<列字母：A/B/AA/BC>、行数8/9/23
+            end_index: 可以是：<列名字母：A/B/AA/BC>、行数8/9/23
 
         Returns:
             int: 返回被删除 行/列 数
@@ -67,12 +67,42 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         if not isinstance(start_index, type(end_index)):
             raise ValueError(f"{start_index} 和 {end_index} 不是一个相同的类型")
         if isinstance(start_index, str):
-            start_index = self.get_index_by_col_name(start_index)
-            end_index = self.get_index_by_col_name(end_index)
+            start_index = excel_col_to_num(start_index)
+            end_index = excel_col_to_num(end_index)
             major_dimension = "COLUMNS"
 
         del_count = self.delete_series(start_index, end_index, major_dimension)
         return del_count
+
+    def delete_column_by_name(
+        self,
+        start_col_name: str,
+        end_col_name: str=None,
+    ) -> int:
+        """
+        删除行或者列，如果 ``start_index`` 和 ``end_index`` 都是字符串，表明删除对应字母区间的列。
+
+        如果只填写 ``start_index`` 只删除单独这一列。
+
+        Note:
+            - 当表头有相同的重复名字的话，从左到右默认取第一个，避免使用相同表头名（列名）
+            - 列名不存在的话抛出 ``FeiShuColumnNotExist`` 异常
+            - 从 1 开始计数，左右都是闭区间
+
+        Args:
+            start_index: 可以是：列字母：A/B/AA/BC
+            end_index: 可以是：列名字母：A/B/AA/BC
+
+        Returns:
+            int: 返回被删除列数
+        """
+        if end_index is None:
+            end_index = start_index
+
+        start_col_name = self.get_index_by_col_name(start_col_name)
+        end_col_name = self.get_index_by_col_name(end_col_name)
+
+        return self.delete_series(start_index, end_index, "COLUMNS")
 
     def write_column(
         self, column_name: str,
@@ -260,82 +290,85 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         start_row: int = 2,
         end_row: Optional[int] = None,
         batch_size: int = 500,
-        include_header: bool = False,
-        use_pandas: bool = True,
-    ) -> Generator[Union[dict[str, Any], pd.Series], None, None]:
+        return_type: Type[Union[List[Any], Dict[str, Any]]] = dict,
+        header: Optional[List[str]] = None,  # 自定义表头
+    ) -> Generator[Union[tuple[int, dict[str, Any]], tuple[int, list[Any]]], None, None]:
         """
         流式迭代读取飞书表格每一行，像本地列表一样使用，内存安全。
 
         自动控制每次请求数据量 < 10MB（飞书实际限制更严格，保守估计）
-        推荐 batch_size=1000~2000（实测 2000 行 × 50 列 ≈ 6~8MB）
+        推荐 batch_size=500（根据实际情况适当调节，可加快遍历速度）
+
+        Note:
+            - 如果 start_row >= 2 且 return_type=dict，则返回 dict，第一行作为表头。
+            - 如果 start_row == 1 且 return_type=dict，则返回 dict，表头使用 Excel 列字母索引。
+            - 如果 return_type=list，则返回 list，没有表头。
+            - 用户可以通过 header 参数自定义表头。
 
         Example:
-            >>> # noinspection PyUnresolvedReferences
-            >>> for row in sheet.iterrows(start_row=2):
-            >>>     print(row[0], row[1])          # List 模式
-            >>>     # 或
-            >>>     print(row["姓名"], row["年龄"]) # dict 模式（推荐）
+            >>> for index, row in sheet.iterrows(start_row=2):
+            >>>     print(index, row["姓名"], row["年龄"])  # dict 模式
+            >>> for index, row in sheet.iterrows(start_row=1, return_type=list):
+            >>>     print(index, row[0], row[1])          # list 模式
+            >>> for index, row in sheet.iterrows(start_row=1, return_type=dict):
+            >>>     print(index, row["A"], row["B"])      # dict 模式，使用 Excel 列字母索引
+            >>> for index, row in sheet.iterrows(start_row=1, return_type=dict, header=["姓名", "年龄"]):
+            >>>     print(index, row["姓名"], row["年龄"])  # dict 模式，自定义表头
 
         Args:
             start_row: 数据起始行（含），默认 2（跳过表头）
             end_row: 结束行（含），None 表示读到最后
-            batch_size: 每次读取行数，默认 200，建议 800~2000
-            include_header: 是否在第一批返回表头行
-            use_pandas: True 返回 pd.Series 字典行（更强大），需要 import pandas
+            batch_size: 每次读取行数，默认 500
+            return_type: 返回类型，可以是 list 或 dict，默认 dict
+            header: 自定义表头，可选
 
         Returns:
-            生成器，每行是 List 或 dict（推荐）
+            生成器，每行是 (索引, 数据) 元组，数据为 dict 或 list
         """
 
         info = self.get_sheet_info()
-        total_rows = info["rowCount"]
-        max_row = end_row or total_rows
+        max_row = end_row or info["rowCount"]
+
         if start_row > max_row:
+            # TODO 加日志打印
+            print(f"警告: 开始处理行 start_row ({start_row}) 比现有数据行数 max_row ({max_row}) 更大. 没有行数据可处理")
             return
 
-        header = None
-        if include_header or use_pandas:
-            header = self.get_header()
+        if header is None:
+            if start_row >= 2:
+                header = self.get_header()
+            elif return_type == dict:
+                # 使用 Excel 列字母索引作为表头
+                header = [num_to_excel_col(i + 1) for i in range(info["columnCount"])]
 
         current_row = start_row
+
         while current_row <= max_row:
             batch_end = min(current_row + batch_size - 1, max_row)
-            range_str = (
-                f"A{current_row}:{num_to_excel_col(info['columnCount'])}{batch_end}"
-            )
+            range_str = f"A{current_row}:{num_to_excel_col(info['columnCount'])}{batch_end}"
 
             try:
                 batch_data = self.read_human(range_str)
             except Exception as e:
-                raise FeiShuException(f"读取行 {current_row}~{batch_end} 失败: {e}")
+                raise FeiShuException(f"读取行 {current_row}~{batch_end} 失败，范围: {range_str}, 错误: {e}")
 
             if not batch_data:
                 break
 
-            # 首次读取时提取表头（如果还没取）
-            if header is None and batch_data:
-                header = batch_data[0] if start_row == 1 else self.get_header()
-                if start_row > 1:
-                    batch_data = batch_data  # 数据从第 start_row 行开始
-                else:
-                    batch_data = batch_data[1:]  # 跳过表头行
-
             # 构造每一行
             for row_values in batch_data:
-                if not row_values:  # 跳过空行，正常来说不会走这个逻辑
+                if not row_values:  # 跳过空行
                     current_row += 1
                     continue
 
-                if use_pandas:
-                    # 自动对齐列数（飞书有时返回短行）
+                if return_type == dict:
+                    # dict 模式：字段名访问，补空对齐
                     padded = (row_values + [""] * len(header))[: len(header)]
-                    yield pd.Series(padded, index=header, name=current_row)
+                    yield current_row, dict(zip(header, padded))
                 else:
-                    # dict 模式最推荐：字段名访问，补空对齐
-                    padded = (row_values + [""] * len(header))[: len(header)]
-                    yield dict(zip(header, padded))
+                    # list 模式：直接返回行数据
+                    yield current_row, row_values
 
                 current_row += 1
-
             if batch_end >= max_row:
                 break

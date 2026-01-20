@@ -1,7 +1,6 @@
 from typing import Union, Dict, Any, List, Tuple, Literal
 import os, re, json, requests
 from typing import Union
-from dotenv import load_dotenv
 from urllib.parse import urlparse, parse_qs
 
 from fastfeishu.models import SheetProperties
@@ -16,7 +15,6 @@ from datetime import datetime
 from decimal import Decimal
 import math
 
-load_dotenv()
 feishu_property = get_feishu_property().feishu  # 读取配置文件
 
 class FeiShuRequest:
@@ -343,20 +341,19 @@ class FeiShuRequest:
         return response
 
     def delete_series(
-        self, start_index, end_index, major_dimension="ROWS"
+        self, start_index: int, end_index: int, major_dimension="ROWS"
     ) -> Dict | requests.Response:
         """
         [删除行或者列](https://open.feishu.cn/document/server-docs/docs/sheets-v3/sheet-rowcol/-delete-rows-or-columns)
 
         :param start_index:
-
             要删除的行或列的起始位置，从 1 开始计数。若 startIndex 为 3 ，则从第 3 行或列开始删除。包含第 3 行或列。
         :param end_index:
-
             要删除的行或列结束的位置。从 1 开始计数。若 endIndex 为 7 ，则删除至第 7 行或列结束。包含第 7 行或列。
-
             示例：当 majorDimension 为 ROWS、 startIndex 为 3、endIndex 为 7 时，则删除第 3、4、5、6、7 行的数据，共删除 5 行.
-        :param major_dimension: 说明
+        :param major_dimension: 删除的维度。可选值：
+            - ROWS：行
+            - COLUMNS：列
         """
         
         url = self._build_url(
