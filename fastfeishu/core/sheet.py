@@ -16,7 +16,7 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
 
     def get_index_by_col_name(self, col_name: str) -> int:
         """
-        根据列名获取对应列的数字索引，起始序号为 0。
+        根据列名获取对应列的数字索引，起始序号为 1。
         例如：get_index_by_col_name("端到端回复") -> 6, 将会返回“端到端回复”列在第六列。
 
         Note:
@@ -45,17 +45,17 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         end_index: Union[str, int]=None,
     ) -> int:
         """
-        删除行或者列，如果 ``start_index`` 和 ``end_index`` 都是字符串，表明删除对应列名区间的列，如果都是整数删除对应区间的行。
+        删除行或者列，如果 ``start_index`` 和 ``end_index`` 都是字符串，表明删除对应字母区间的列，如果都是整数删除对应区间的行。
 
-        如果只填写 ``start_index`` 只删除单独这一列。
+        如果只填写 ``start_index`` 只删除单独这一列/行。
 
         Note:
             - 当表头有相同的重复名字的话，从左到右默认取第一个，避免使用相同表头名（列名）
-            - 列名不存在的话抛出 ``FeiShuColumnNotExist`` 异常
+            - 从 1 开始计数，左右都是闭区间
 
         Args:
-            start_index: 可以是：<列名>、行数8/9/23
-            end_index: 可以是：<列名>、行数8/9/23
+            start_index: 可以是：<列字母：A/B/AA/BC>、行数8/9/23
+            end_index: 可以是：<列名字母：A/B/AA/BC>、行数8/9/23
 
         Returns:
             int: 返回被删除 行/列 数
@@ -67,12 +67,42 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         if not isinstance(start_index, type(end_index)):
             raise ValueError(f"{start_index} 和 {end_index} 不是一个相同的类型")
         if isinstance(start_index, str):
-            start_index = self.get_index_by_col_name(start_index)
-            end_index = self.get_index_by_col_name(end_index)
+            start_index = excel_col_to_num(start_index)
+            end_index = excel_col_to_num(end_index)
             major_dimension = "COLUMNS"
 
         del_count = self.delete_series(start_index, end_index, major_dimension)
         return del_count
+
+    def delete_column_by_name(
+        self,
+        start_col_name: str,
+        end_col_name: str=None,
+    ) -> int:
+        """
+        删除行或者列，如果 ``start_index`` 和 ``end_index`` 都是字符串，表明删除对应字母区间的列。
+
+        如果只填写 ``start_index`` 只删除单独这一列。
+
+        Note:
+            - 当表头有相同的重复名字的话，从左到右默认取第一个，避免使用相同表头名（列名）
+            - 列名不存在的话抛出 ``FeiShuColumnNotExist`` 异常
+            - 从 1 开始计数，左右都是闭区间
+
+        Args:
+            start_index: 可以是：列字母：A/B/AA/BC
+            end_index: 可以是：列名字母：A/B/AA/BC
+
+        Returns:
+            int: 返回被删除列数
+        """
+        if end_index is None:
+            end_index = start_index
+
+        start_col_name = self.get_index_by_col_name(start_col_name)
+        end_col_name = self.get_index_by_col_name(end_col_name)
+
+        return self.delete_series(start_index, end_index, "COLUMNS")
 
     def write_column(
         self, column_name: str,
@@ -256,25 +286,25 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
             return ''
 
     def iterrows(
-        self,
-        start_row: int = 2,
-        end_row: Optional[int] = None,
-        batch_size: int = 500,
-        include_header: bool = False,
-        use_pandas: bool = True,
-    ) -> Generator[Union[dict[str, Any], pd.Series], None, None]:
+            self,
+            start_row: int = 2,
+            end_row: Optional[int] = None,
+            batch_size: int = 500,
+            include_header: bool = False,
+            use_pandas: bool = True,
+    ) -> Generator[Union[tuple[int, dict[str, Any]], tuple[int, pd.Series]], None, None]:
         """
         流式迭代读取飞书表格每一行，像本地列表一样使用，内存安全。
 
         自动控制每次请求数据量 < 10MB（飞书实际限制更严格，保守估计）
-        推荐 batch_size=1000~2000（实测 2000 行 × 50 列 ≈ 6~8MB）
+        推荐 batch_size=500（根据实际情况适当调节，可加快遍历速度）
 
         Example:
             >>> # noinspection PyUnresolvedReferences
-            >>> for row in sheet.iterrows(start_row=2):
-            >>>     print(row[0], row[1])          # List 模式
+            >>> for index, row in sheet.iterrows(start_row=2):
+            >>>     print(index, row["姓名"], row["年龄"])  # dict 模式（推荐）
             >>>     # 或
-            >>>     print(row["姓名"], row["年龄"]) # dict 模式（推荐）
+            >>>     print(index, row[0], row[1])          # pd.Series 模式
 
         Args:
             start_row: 数据起始行（含），默认 2（跳过表头）
@@ -284,7 +314,7 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
             use_pandas: True 返回 pd.Series 字典行（更强大），需要 import pandas
 
         Returns:
-            生成器，每行是 List 或 dict（推荐）
+            生成器，每行是 (索引, 数据) 元组，数据为 dict 或 pd.Series
         """
 
         info = self.get_sheet_info()
@@ -329,11 +359,11 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
                 if use_pandas:
                     # 自动对齐列数（飞书有时返回短行）
                     padded = (row_values + [""] * len(header))[: len(header)]
-                    yield pd.Series(padded, index=header, name=current_row)
+                    yield current_row, pd.Series(padded, index=header)
                 else:
                     # dict 模式最推荐：字段名访问，补空对齐
                     padded = (row_values + [""] * len(header))[: len(header)]
-                    yield dict(zip(header, padded))
+                    yield current_row, dict(zip(header, padded))
 
                 current_row += 1
 
