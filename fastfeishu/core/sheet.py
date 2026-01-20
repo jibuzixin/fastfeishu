@@ -96,13 +96,13 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         Returns:
             int: 返回被删除列数
         """
-        if end_index is None:
-            end_index = start_index
+        if end_col_name is None:
+            end_col_name = start_col_name
 
-        start_col_name = self.get_index_by_col_name(start_col_name)
-        end_col_name = self.get_index_by_col_name(end_col_name)
+        start_col_index = self.get_index_by_col_name(start_col_name)
+        end_col_index = self.get_index_by_col_name(end_col_name)
 
-        return self.delete_series(start_index, end_index, "COLUMNS")
+        return self.delete_series(start_col_index, end_col_index, "COLUMNS")
 
     def write_column(
         self, column_name: str,
@@ -334,12 +334,11 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
             print(f"警告: 开始处理行 start_row ({start_row}) 比现有数据行数 max_row ({max_row}) 更大. 没有行数据可处理")
             return
 
-        if header is None:
+        if header is None and return_type == dict:
             if start_row >= 2:
                 header = self.get_header()
-            elif return_type == dict:
-                # 使用 Excel 列字母索引作为表头
-                header = [num_to_excel_col(i + 1) for i in range(info["columnCount"])]
+            else:
+                header = [num_to_excel_col(i + 1) for i in range(info["columnCount"])]  # 使用 Excel 列字母索引作为表头
 
         current_row = start_row
 
