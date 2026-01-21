@@ -14,5 +14,5 @@ setup(
     long_description_content_type='text/markdown',  # 指定描述内容类型为 Markdown
     packages=find_packages(),  # 自动查找项目中的包
     install_requires=install_requires,
-    python_requires='>=3.11,<3.12',  # 版本太高会有依赖冲突
+    python_requires='>=3.11, <3.13',  # 支持Python 3.11和3.12
 )
