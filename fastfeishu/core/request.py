@@ -33,7 +33,6 @@ class FeiShuRequest:
 
     def get_tenant_token(self):
         """获取tenant_access_token"""
-        tat = ""
         url = os.path.join(
             self.base_url, self.link_auth.tenantToken.format().human_repr()
         )
@@ -43,10 +42,9 @@ class FeiShuRequest:
         }
         try:
             r = requests.post(url, data=post_data)
-            tat = r.json()["tenant_access_token"]
+            return r.json()["tenant_access_token"]
         except Exception as e:
             raise FeiShuException("Error happened when get tat token: %s" % e)
-        return tat
 
     def set_link(self, link: str):
         self.link = link

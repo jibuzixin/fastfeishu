@@ -34,6 +34,11 @@ class Protect:
         def build(self):
             return self.protect
 
+    def to_dict(self):
+        """过滤掉未设置的值，只转化有值的属性为 Dict"""
+        protect_dict = asdict(self)
+        return {k: v for k, v in protect_dict.items() if v is not None}
+
 @dataclass
 class SheetProperties:
     """"""
@@ -87,4 +92,7 @@ class SheetProperties:
     def to_dict(self):
         """过滤掉未设置的值，只转化有值的属性为 Dict"""
         sheet_dict = asdict(self)
-        return {k: v for k, v in sheet_dict.items() if v is not None}
+        result = {k: v for k, v in sheet_dict.items() if v is not None}
+        if self.protect:
+            result['protect'] = self.protect.to_dict()
+        return result
