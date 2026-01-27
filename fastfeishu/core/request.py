@@ -33,6 +33,8 @@ class FeiShuRequest:
 
     def get_tenant_token(self):
         """获取tenant_access_token"""
+        if os.getenv("FS_APP_ID") is None or os.getenv("FS_APP_SECRET") is None:
+            raise ValueError(f"请设置飞书必要的环境变量：FS_APP_ID 和 FS_APP_SECRET ，如果已设置请检查是否有值")
         url = os.path.join(
             self.base_url, self.link_auth.tenantToken.format().human_repr()
         )
