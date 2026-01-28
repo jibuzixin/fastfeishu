@@ -105,7 +105,8 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         return self.delete_series(start_col_index, end_col_index, "COLUMNS")
 
     def write_column(
-        self, column_name: str,
+        self,
+        column_name: str,
         data_list: List[Any],
         start_row: int=2,
     ):
@@ -122,6 +123,45 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
             col_letter = self.get_letter_by_col_name(column_name)  # 列存在，获取列的字母索引
         # 3. 找到对应的列，将处理好的数据写入
         self.write(f'{col_letter}{start_row}:{col_letter}{len(data_list)+start_row-1}', data_list)
+
+    def append_column(
+        self,
+        column_name: str,
+        data_list: List[Any]
+    ):
+        """向指定列中写入数据，如果列中已有值，则追加写入"""
+
+        # 0. 此预处理是考虑到边界条件，如果原本此列已有值，需要追加。要将此列所有 None 改变为 ''
+        col_letter = self.get_letter_by_col_name(column_name)
+        total_row = self.get_sheet_info()["rowCount"]
+        data = self.read(f'{col_letter}1:{col_letter}{total_row}', value_render_option='UnformattedValue')
+        data.reverse()
+
+        # 0.1 找到末尾肉眼看到的都是空的单元格范围
+        blank_row_num = 0
+        has_blank_str = False
+        for d in data:
+            if d[0] is not None and d[0] != '':
+                break
+            if d[0] == '':
+                has_blank_str = True
+            blank_row_num += 1
+        end_row_num = total_row - blank_row_num  # 获取最后一个有效数据的行数
+        if has_blank_str:  # 这样优化后，每次操作平均能够节省 0.5s 的时间
+            self.write(f'{col_letter}{end_row_num + 1}:{col_letter}{total_row}', [[None]] * blank_row_num)  # 把最后都是空白的写成 None
+
+        # 1. 将 None 转化为 '' 字符串可以适配飞书 接口往后追加数据
+        data_list = [[d] if d is not None else ['']
+                     for d in data_list]
+        
+        # 2. 检查列是否存在。考虑此函数使用场景是向已有列中追加数据
+        #    所以不自动创建，以免造成不明确的预期
+        if column_name not in self.header:
+            raise FeiShuColumnNotExist(column_name, f' 列不存在，请检查，先创建后写入')
+        
+        # 3. 写入数据
+        sheet_range = f'{col_letter}{end_row_num}:{col_letter}{len(data_list)+end_row_num-1}'
+        self.append(sheet_range, data_list)
 
     def write_row(
         self,

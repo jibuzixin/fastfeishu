@@ -215,10 +215,10 @@ class FeiShuSheetOperations:
             sheet_range: 读取表格的范围: 'A2:BC10'
             value_render_option: 指定单元格数据的格式。可选值如下所示。当参数缺省时，默认不进行公式计算，返回公式本身，且单元格为数值格式。
 
-                - ToString：返回纯文本的值（数值类型除外）
-                - Formula：单元格中含有公式时，返回公式本身
-                - FormattedValue：计算并格式化单元格
-                - UnformattedValue：计算但不对单元格进行格式化
+                - ToString: 回纯文本的值（数值类型除外）
+                - Formula: 单元格中含有公式时，返回公式本身
+                - FormattedValue: 计算并格式化单元格
+                - UnformattedValue: 计算但不对单元格进行格式化
             date_time_render_option: 指定数据类型为日期、时间、或时间日期的单元格数据的格式。
 
                 - 若不传值，默认返回浮点数值，整数部分为自 1899 年 12 月 30 日以来的天数；小数部分为该时间占 24 小时的份额。
