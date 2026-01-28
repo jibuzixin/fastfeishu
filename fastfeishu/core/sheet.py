@@ -74,7 +74,7 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         del_count = self.delete_series(start_index, end_index, major_dimension)
         return del_count
 
-    def delete_column_by_name(
+    def delete_columns_by_name(
         self,
         start_col_name: str,
         end_col_name: str=None,

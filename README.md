@@ -247,17 +247,23 @@ from fastfeishu.feishu import FeiShuSheet
 if __name__ == '__main__':
     s = FeiShuSheet('飞书链接')
 
+    # 删除6-8列（包含6和8列）
+    s.delete_series(6, 8, major_dimension="COLUMNS")
+
     # 删除6-8行（包含6和8行）
-    s.delete_series(6, 8)
+    s.delete_series(6, 8, major_dimension="ROW")
 
     # 删除"端到端回复"列
-    s.delete_series("端到端回复")
+    s.delete_columns_by_name("端到端回复")
 
     # 删除"CaseID"到"端到端回复"之间的所有列
-    s.delete_series("CaseID", "端到端回复")
+    s.delete_columns_by_name("CaseID", "端到端回复")
 
-    # 使用数字索引删除（从1开始）
+    # 使用数字索引删除1~3行，包含第3行（从1开始）
     s.delete_series_by_index(1, 3)
+
+    # 使用字母索引删除 A~F 列，包含 F 列
+    s.delete_series_by_index('A', 'F')
 ```
 
 #### 插入列
@@ -285,7 +291,9 @@ from fastfeishu.feishu import FeiShuSheet
 if __name__ == '__main__':
     s = FeiShuSheet('飞书链接')
 
-    # 替换占位符为实际值
+    # 替换目标范围内，单元格中的占位符为实际值
+    # 如：将 a2:c2 范围的单元格中包含 {name}, {age}, {city} 替换为实际的值
+    # 注意当前只支持字符串
     s.replace_placeholder(
         sheet_range='a2:c2',
         name='张三',
@@ -303,6 +311,12 @@ from fastfeishu.models.sheet_properties import SheetProperties, Protect
 if __name__ == '__main__':
     s = FeiShuSheet('飞书链接')
 
+    # 配置单元格保护
+    protect = Protect.builder() \
+        .lock(True) \
+        .lock_info('锁定信息') \
+        .build()
+
     # 配置Sheet属性
     properties = SheetProperties.builder() \
         .title('新标题') \
@@ -310,14 +324,7 @@ if __name__ == '__main__':
         .hidden(False) \
         .frozen_col_count(3) \
         .frozen_row_count(2) \
-        .build()
-
-    s.update_sheet_properties(properties)
-
-    # 配置单元格保护
-    protect = Protect.builder() \
-        .lock(True) \
-        .lock_info('锁定信息') \
+        .protect(protect)
         .build()
 
     s.update_sheet_properties(properties)
