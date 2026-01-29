@@ -137,18 +137,12 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         data = self.read(f'{col_letter}1:{col_letter}{total_row}', value_render_option='UnformattedValue')
         data.reverse()
 
-        # 0.1 找到末尾肉眼看到的都是空的单元格范围
         blank_row_num = 0
-        has_blank_str = False
         for d in data:
-            if d[0] is not None and d[0] != '':
+            if d[0] is not None:
                 break
-            if d[0] == '':
-                has_blank_str = True
             blank_row_num += 1
         end_row_num = total_row - blank_row_num  # 获取最后一个有效数据的行数
-        if has_blank_str:  # 这样优化后，每次操作平均能够节省 0.5s 的时间
-            self.write(f'{col_letter}{end_row_num + 1}:{col_letter}{total_row}', [[None]] * blank_row_num)  # 把最后都是空白的写成 None
 
         # 1. 将 None 转化为 '' 字符串可以适配飞书 接口往后追加数据
         data_list = [[d] if d is not None else ['']

@@ -193,7 +193,7 @@ if __name__ == '__main__':
     s = FeiShuSheet('飞书链接')
 
     # 追加写入单列数据
-    # 假设原列数据是: [1, 4, 5, 6, None, yes, '', None, '']
+    # 假设原列数据是: [1, 4, 5, 6, None, yes, '', None, '', None, None]
     s.append_to_column("自动化", [1, 2, 3])
     # 写入后变为: [1, 4, 5, 6, None, yes, '', None, '', 1, 2, 3]
 ```
