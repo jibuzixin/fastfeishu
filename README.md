@@ -184,6 +184,20 @@ if __name__ == '__main__':
     s.write_column("自动化", [1, 2, 3, 4, 5, 6, 7, 8], start_row=4)
 ```
 
+#### 按列名追加写入列数据（不会自动新建列）
+
+```python
+from fastfeishu.feishu import FeiShuSheet
+
+if __name__ == '__main__':
+    s = FeiShuSheet('飞书链接')
+
+    # 追加写入单列数据
+    # 假设原列数据是: [1, 4, 5, 6, None, yes, '', None, '']
+    s.append_to_column("自动化", [1, 2, 3])
+    # 写入后变为: [1, 4, 5, 6, None, yes, '', None, '', 1, 2, 3]
+```
+
 #### 按列名写入行（支持字典或二维数组）
 
 ```python

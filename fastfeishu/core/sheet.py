@@ -124,7 +124,7 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         # 3. 找到对应的列，将处理好的数据写入
         self.write(f'{col_letter}{start_row}:{col_letter}{len(data_list)+start_row-1}', data_list)
 
-    def append_column(
+    def append_to_column(
         self,
         column_name: str,
         data_list: List[Any]
