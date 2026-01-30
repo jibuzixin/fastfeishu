@@ -178,15 +178,19 @@ class FeiShuRequest:
         response.raise_for_status()
         return response
 
-    def write(self, sheet_range: str, data_list: List[List[Any]]) -> requests.Response:
+    def _preprocess_data_grid(self, data_list: List[List[Any]]) -> List[List[Any]]:
         """
-        [向单个范围写入数据](https://open.feishu.cn/document/server-docs/docs/sheets-v3/data-operation/write-data-to-a-single-range)
+        预处理数据网格，将各种数据类型转换为飞书 API 接受的格式。
 
-        单次写入数据不得超过 5000 行、100列。
-        每个单元格不超过 50,000 字符，由于服务端会增加控制字符，因此推荐每个单元格不超过 40,000 字符。
+        处理逻辑:
+        - FeiShuCellType: 调用 to_json() 方法
+        - NaN: 转换为 None
+        - 公式（以 = 开头的字符串）: 封装为 Formula 对象
+        - datetime/Decimal/bool: 转换为字符串
+        - 其他复杂对象: JSON 序列化
 
-        :param sheet_range: 示例: 'A2:B5', 'ad10:ad100', 'd3:d12'
-        :param data_list: 二维数组，数组元素表示行数据。如： [[1,2,3], [4,5,6]] 表示写入的第一行数据为 1,2,3 ... ... 没有数据填 None
+        :param data_list: 二维数组
+        :return: 处理后的二维数组
         """
         def _default(o):
             if isinstance(o, float) and math.isnan(o):
@@ -210,6 +214,20 @@ class FeiShuRequest:
                         continue
                 else:
                     data_list[r][c] = json.dumps(item, default=_default, ensure_ascii=False, indent=4)
+
+        return data_list
+
+    def write(self, sheet_range: str, data_list: List[List[Any]]) -> requests.Response:
+        """
+        [向单个范围写入数据](https://open.feishu.cn/document/server-docs/docs/sheets-v3/data-operation/write-data-to-a-single-range)
+
+        单次写入数据不得超过 5000 行、100列。
+        每个单元格不超过 50,000 字符，由于服务端会增加控制字符，因此推荐每个单元格不超过 40,000 字符。
+
+        :param sheet_range: 示例: 'A2:B5', 'ad10:ad100', 'd3:d12'
+        :param data_list: 二维数组，数组元素表示行数据。如： [[1,2,3], [4,5,6]] 表示写入的第一行数据为 1,2,3 ... ... 没有数据填 None
+        """
+        data_list = self._preprocess_data_grid(data_list)
 
         url = self._build_url(
             self.link_sheets.write.format(SHEET_TOKEN=self.sheet_token).human_repr(),
@@ -237,35 +255,14 @@ class FeiShuRequest:
                 {"range": "D2:E3", "values": [[9,10], [11,12]]}
             ]
         """
-        def _default(o):
-            if isinstance(o, float) and math.isnan(o):
-                return None
-            if isinstance(o, (datetime, Decimal, bool)):
-                return str(o)
-            raise TypeError(f"对象类型：[ {type(o).__name__} ] 不是一个可 JSON 序列化的，写入失败")
-
         # 处理每个范围的数据
         processed_ranges = []
         for value_range in value_ranges:
             sheet_range = value_range["range"]
             data_list = value_range["values"]
 
-            # 数据预处理（与 write 方法相同的逻辑）
-            for r, row in enumerate(data_list):
-                for c, item in enumerate(row):
-                    if isinstance(item, FeiShuCellType):
-                        data_list[r][c] = item.to_json()
-                    elif isinstance(item, float) and math.isnan(item):
-                        data_list[r][c] = None
-                    elif item is None or isinstance(item, (int, float, bool)):
-                        continue
-                    elif isinstance(item, str):  # 公式
-                        if item.startswith("="):
-                            data_list[r][c] = Formula(item).to_json()
-                        else:
-                            continue
-                    else:
-                        data_list[r][c] = json.dumps(item, default=_default, ensure_ascii=False, indent=4)
+            # 数据预处理（复用公共方法）
+            data_list = self._preprocess_data_grid(data_list)
 
             processed_ranges.append({
                 "range": self.sheet_id + "!" + sheet_range.upper(),
