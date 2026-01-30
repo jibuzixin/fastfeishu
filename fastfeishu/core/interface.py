@@ -53,6 +53,9 @@ class FeiShuInterface(abc.ABC):
     def write(self, sheet_range: str, data_list: List[List[Any]]): ...  # ?
 
     @abc.abstractmethod
+    def write_batch(self, value_ranges: List[Dict[str, Any]]): ...  # ?
+
+    @abc.abstractmethod
     def append(self, sheet_range: str, data_list: List[list], insert_data_option="OVERWRITE"): ...  # ?
 
     @abc.abstractmethod

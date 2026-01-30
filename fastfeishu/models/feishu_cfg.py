@@ -43,6 +43,7 @@ class SheetsSettings(BaseSettings):
     read: LinkAttribute
     insert: LinkAttribute
     write: LinkAttribute
+    writeBatch: LinkAttribute
     append: LinkAttribute
     sheetsBatchUpdate: LinkAttribute
     # delete: LinkAttribute

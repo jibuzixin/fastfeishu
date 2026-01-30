@@ -6,6 +6,7 @@ from fastfeishu.utils import num_to_excel_col
 from fastfeishu.exceptions.exception import FeiShuColumnNotExist, FeiShuException
 from fastfeishu.core.interface import FeiShuInterface
 from fastfeishu.utils.common import match_row_num_by_range, match_col_letter_by_range, excel_col_to_num
+from fastfeishu.utils.partition_grid import partition_grid
 
 
 class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
@@ -146,7 +147,7 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
 
         # 1. 将 None 转化为 '' 字符串可以适配飞书 接口往后追加数据
         data_list = [[d] if d is not None else ['']
-                    for d in data_list]
+                     for d in data_list]
         
         # 2. 检查列是否存在。考虑此函数使用场景是向已有列中追加数据
         #    所以不自动创建，以免造成不明确的预期
@@ -197,6 +198,124 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
 
         cell_range = f'A{write_row}:{num_to_excel_col(heads_len)}{len(write_list)+write_row-1}'
         self.write(cell_range, write_list)
+
+    def write_row_smart(
+        self,
+        data: List[Union[List[Any], Dict[str, Any]]],
+        write_row: int = 2,
+        skip_none: bool = True,
+        partition_strategy: Literal['horizontal', 'vertical', 'auto'] = 'auto'
+    ):
+        """
+        智能批量写入行数据，自动跳过 None 值以避免覆盖已有数据（可选）。
+
+        该方法将数据分割成多个矩形区域，仅写入有效数据，可以避免用 None 覆盖单元格。
+        相比 write_row 方法，这个方法更智能，性能更好（使用批量写入API）。
+
+        Note:
+            - 当 skip_none=True 时，只写入非 None 的数据，不会用 None 覆盖单元格
+            - 当 skip_none=False 时，行为与 write_row 相同，会用 None 覆盖单元格
+            - 使用批量写入 API，性能优于多次调用 write_row
+            - 支持字典和列表两种数据格式
+
+        Args:
+            data: 需要写入的值，可以是二维数组或字典数组
+                - 字典格式: [{"列名1": 值1, "列名2": 值2}, ...]
+                - 列表格式: [[值1, 值2, ...], [值3, 值4, ...], ...]
+            write_row: 要写入的起始行（默认从第2行开始）
+            skip_none: 是否跳过 None 值（默认 True）
+                - True: 只写入非 None 数据，不覆盖单元格中的 None
+                - False: 与 write_row 行为相同，会用 None 覆盖单元格
+            partition_strategy: 数据分区策略（默认 'auto'）
+                - 'horizontal': 优先横向分割
+                - 'vertical': 优先纵向分割
+                - 'auto': 自动选择分割数量最少的策略
+
+        Example:
+            >>> # 示例1: 跳过 None 值（默认行为）
+            >>> sheet.write_row_smart([
+            >>>     {"姓名": "张三", "年龄": 25, "部门": None},
+            >>>     {"姓名": "李四", "年龄": None, "部门": "技术部"}
+            >>> ], write_row=2)
+            >>> # 只会写入 "张三", 25, "李四", "技术部"，不会覆盖 None 位置
+            >>>
+            >>> # 示例2: 覆盖 None 值（与 write_row 相同）
+            >>> sheet.write_row_smart([
+            >>>     [1, None, 3],
+            >>>     [4, 5, None]
+            >>> ], write_row=5, skip_none=False)
+            >>> # 会用 None 覆盖对应的单元格
+            >>>
+            >>> # 示例3: 写入第一行（表头）
+            >>> sheet.write_row_smart([
+            >>>     ["姓名", "年龄", "部门"],
+            >>>     {"姓名": "张三", "年龄": 25, "部门": "技术部"}
+            >>> ], write_row=1, skip_none=False)
+        """
+        # 1. 数据预处理：将字典转换为二维数组
+        header = self.header
+        heads_len = len(header)
+
+        if write_row == 1:
+            if not isinstance(data[0], list):
+                raise ValueError("此方法依赖表头，无法覆盖写入第一行，如有需要，请将写入数组的第一个元素设置为数组类型表示为表头。"
+                                 "或者使用 write() 方法。")
+            if isinstance(data[0], list):
+                header = data[0]
+                heads_len = len(header)
+
+        write_list = []
+        for row in data:
+            if isinstance(row, dict):
+                write_list.append([row.get(col_name) for col_name in header])
+            elif isinstance(row, list):
+                row = (row + [None] * heads_len)[:heads_len]  # 对齐数组长度
+                write_list.append(row)
+            else:
+                raise ValueError(f"需要写入的值可以是二维数组、数组[字典]。当前数组元素类型是: {type(row)}")
+
+        # 2. 如果 skip_none=False，使用传统方式（与 write_row 相同）
+        if not skip_none:
+            cell_range = f'A{write_row}:{num_to_excel_col(heads_len)}{len(write_list)+write_row-1}'
+            self.write(cell_range, write_list)
+            return
+
+        # 3. skip_none=True 时，使用智能分区批量写入
+        # 使用 partition_grid 将数据分成多个矩形区域
+        # TODO 当前是一维分区，可能数量会很多，之后看情况是否使用实心最小分区方法
+        rectangles = partition_grid(write_list, strategy=partition_strategy)
+
+        if not rectangles:
+            # 没有有效数据，直接返回
+            return
+
+        # 4. 将矩形区域转换为批量写入格式
+        ranges_data = []
+        for rect in rectangles:
+            top_left = rect['top_left']  # (row_idx, col_idx)
+            bottom_right = rect['bottom_right']
+            values = rect['values']
+
+            # 计算实际的行列位置（相对于 write_row 和 A 列）
+            start_row = write_row + top_left[0]
+            end_row = write_row + bottom_right[0]
+            start_col = num_to_excel_col(top_left[1] + 1)
+            end_col = num_to_excel_col(bottom_right[1] + 1)
+
+            # 构造范围字符串
+            range_str = f"{start_col}{start_row}:{end_col}{end_row}"
+
+            # 如果是横向矩形，values 是一维数组，需要转为二维
+            if rect['type'] == 'horizontal':
+                values = [values]
+
+            ranges_data.append({
+                "range": range_str,
+                "values": values
+            })
+
+        # 5. 使用批量写入 API
+        self.write_batch(ranges_data)
 
     def write_row_by_hang_header(
         self,

@@ -110,6 +110,25 @@ class FeiShuSheetOperations:
         _response_json(response)
         self._detect_header_modification(sheet_range)
 
+    def write_batch(self, value_ranges: List[Dict[str, Any]]):
+        """
+        向多个范围批量写入数据。
+
+        Args:
+            value_ranges: 写入数据的列表，每个元素包含 range 和 values 字段
+                示例: [
+                    {"range": "A2:B5", "values": [[1,2], [3,4], [5,6], [7,8]]},
+                    {"range": "D2:E3", "values": [[9,10], [11,12]]}
+                ]
+        """
+        self._deny_if_readonly()
+        response = self._request.write_batch(value_ranges)
+        _response_json(response)
+
+        # 检测是否有任何范围修改了表头
+        for value_range in value_ranges:
+            self._detect_header_modification(value_range["range"])
+
     def append(self, sheet_range, data_list, insert_data_option="OVERWRITE"):
         self._deny_if_readonly()
         response = self._request.append(sheet_range, data_list, insert_data_option)
