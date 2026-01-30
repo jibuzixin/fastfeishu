@@ -146,7 +146,7 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
 
         # 1. 将 None 转化为 '' 字符串可以适配飞书 接口往后追加数据
         data_list = [[d] if d is not None else ['']
-                     for d in data_list]
+                    for d in data_list]
         
         # 2. 检查列是否存在。考虑此函数使用场景是向已有列中追加数据
         #    所以不自动创建，以免造成不明确的预期
@@ -264,7 +264,7 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         insert_number: int = 1,
         inherit_style: bool = True,
     ):
-        """向指定列左边插入指定数量的空列，inherit_style 为 True 表示插入列是否复制起始列的单元格样式。"""
+        """向指定列右边插入指定数量的空列，inherit_style 为 True 表示插入列是否复制起始列的单元格样式。"""
         col_num = excel_col_to_num(column_letter)
         if inherit_style:
             self.insert_series(col_num, col_num + insert_number, "COLUMNS", "BEFORE")
@@ -312,6 +312,15 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         data = self.read(sheet_range, value_render_option="Formula", date_time_render_option='')
         return data
 
+    def read_column(self, column_name: str) -> List[Any]:
+        """
+        根据列名读取对应列的所有数据，返回一维数组。
+        """
+        col_index = self.get_index_by_col_name(column_name)
+        col_letter = num_to_excel_col(col_index)
+        data = self.read_human(f'{col_letter}2:{col_letter}{self.get_sheet_info()["rowCount"]}')
+        return [row[0] for row in data]
+    
     def get_title(self) -> str:
         info = self.get_sheet_info()
         if "title" in info:
