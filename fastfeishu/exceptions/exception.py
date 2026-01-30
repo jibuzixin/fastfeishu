@@ -14,4 +14,4 @@ class FeiShuRequestException(FeiShuException):
 class FeiShuColumnNotExist(FeiShuException):
     """飞书列不存在"""
     def __init__(self, column_name: str | List[str], message="飞书列不存在"):
-        super().__init__(f"{message}: {column_name}")
+        super().__init__(f"[{column_name}] {message}")

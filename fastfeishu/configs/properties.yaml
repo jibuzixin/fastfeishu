@@ -19,6 +19,8 @@ feishu:
         url: sheets/v2/spreadsheets/{SHEET_TOKEN}/values_prepend
       write:
         url: sheets/v2/spreadsheets/{SHEET_TOKEN}/values
+      writeBatch:
+        url: sheets/v2/spreadsheets/{SHEET_TOKEN}/values_batch_update
       append:
         url: sheets/v2/spreadsheets/{SHEET_TOKEN}/values_append
       sheetsBatchUpdate:

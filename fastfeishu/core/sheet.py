@@ -1,11 +1,12 @@
 import pandas as pd
 
 from fastfeishu.core.operations import FeiShuSheetOperations
-from typing import Union, Any, Optional, List, Generator, Dict, Literal, Type
+from typing import Union, Any, Optional, List, Generator, Dict, Literal, Type, Tuple
 from fastfeishu.utils import num_to_excel_col
 from fastfeishu.exceptions.exception import FeiShuColumnNotExist, FeiShuException
 from fastfeishu.core.interface import FeiShuInterface
 from fastfeishu.utils.common import match_row_num_by_range, match_col_letter_by_range, excel_col_to_num
+from fastfeishu.utils.partition_grid import partition_grid
 
 
 class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
@@ -39,6 +40,49 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         return num_to_excel_col(self.get_index_by_col_name(col_name))
     
     # -------------------------------------- 写操作 --------------------------------------------
+
+    def _convert_data_to_grid(
+        self,
+        data: List[Union[List[Any], Dict[str, Any]]],
+        header: List[str],
+        write_row: int
+    ) -> Tuple[List[List[Any]], List[str], int]:
+        """
+        将字典/列表格式的数据统一转换为二维数组。
+
+        Args:
+            data: 输入数据，支持字典数组或二维数组
+            header: 当前表头
+            write_row: 起始行号
+
+        Returns:
+            (二维数组, 实际表头, 表头长度)
+        """
+        heads_len = len(header)
+
+        # 处理写入第一行的情况（表头行）
+        if write_row == 1:
+            if not isinstance(data[0], list):
+                raise ValueError(
+                    "此方法依赖表头，无法覆盖写入第一行，如有需要，请将写入数组的第一个元素设置为数组类型表示为表头。"
+                    "或者使用 write() 方法。"
+                )
+            if isinstance(data[0], list):
+                header = data[0]
+                heads_len = len(header)
+
+        # 将数据转换为二维数组
+        write_list = []
+        for row in data:
+            if isinstance(row, dict):
+                write_list.append([row.get(col_name) for col_name in header])
+            elif isinstance(row, list):
+                row = (row + [None] * heads_len)[:heads_len]  # 对齐数组长度
+                write_list.append(row)
+            else:
+                raise ValueError(f"需要写入的值可以是二维数组、数组[字典]。当前数组元素类型是: {type(row)}")
+
+        return write_list, header, heads_len
     def delete_series_by_index(
         self,
         start_index: Union[str, int],
@@ -74,7 +118,7 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         del_count = self.delete_series(start_index, end_index, major_dimension)
         return del_count
 
-    def delete_column_by_name(
+    def delete_columns_by_name(
         self,
         start_col_name: str,
         end_col_name: str=None,
@@ -105,7 +149,8 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         return self.delete_series(start_col_index, end_col_index, "COLUMNS")
 
     def write_column(
-        self, column_name: str,
+        self,
+        column_name: str,
         data_list: List[Any],
         start_row: int=2,
     ):
@@ -123,46 +168,139 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         # 3. 找到对应的列，将处理好的数据写入
         self.write(f'{col_letter}{start_row}:{col_letter}{len(data_list)+start_row-1}', data_list)
 
+    def append_to_column(
+        self,
+        column_name: str,
+        data_list: List[Any]
+    ):
+        """向指定列中写入数据，如果列中已有值，则追加写入"""
+
+        # 0. 此预处理是考虑到边界条件，如果原本此列已有值，需要追加。要将此列所有 None 改变为 ''
+        col_letter = self.get_letter_by_col_name(column_name)
+        total_row = self.get_sheet_info()["rowCount"]
+        data = self.read(f'{col_letter}1:{col_letter}{total_row}', value_render_option='UnformattedValue')
+        data.reverse()
+
+        blank_row_num = 0
+        for d in data:
+            if d[0] is not None:
+                break
+            blank_row_num += 1
+        end_row_num = total_row - blank_row_num  # 获取最后一个有效数据的行数
+
+        # 1. 将 None 转化为 '' 字符串可以适配飞书 接口往后追加数据
+        data_list = [[d] if d is not None else ['']
+                     for d in data_list]
+        
+        # 2. 检查列是否存在。考虑此函数使用场景是向已有列中追加数据
+        #    所以不自动创建，以免造成不明确的预期
+        if column_name not in self.header:
+            raise FeiShuColumnNotExist(column_name, f' 列不存在，请检查，先创建后写入')
+        
+        # 3. 写入数据
+        sheet_range = f'{col_letter}{end_row_num}:{col_letter}{len(data_list)+end_row_num-1}'
+        self.append(sheet_range, data_list)
+
     def write_row(
         self,
         data: List[Union[List[Any], Dict[str, Any]]],
         write_row: int = 2,
+        skip_none: bool = True,
+        partition_strategy: Literal['horizontal', 'vertical', 'auto'] = 'auto'
     ):
         """
-        写入一行或者多行数据，如果是多行需要用数组包装。
+        写入一行或多行数据，支持智能跳过 None 值。
+
+        该方法是最强大的行写入方法，支持：
+        - 字典和列表两种数据格式
+        - 可选的 None 值跳过功能（避免覆盖已有数据）
+        - 使用批量写入 API，性能优秀
+        - 自动数据分区优化
 
         Note:
-            - 如果是字典则会根据列名（默认列的第一个单元格）写入，列不存在什么都不写
-            - 二维数组的第一个索引值代表行，第二个索引值代表行中单元格的值。需要保证数组元素可序列化
+            - 如果是字典则会根据列名（默认列的第一个单元格）写入，列不存在填 None
+            - 二维数组的第一个索引值代表行，第二个索引值代表行中单元格的值
+            - 当 skip_none=True 时，只写入非 None 的数据，不会用 None 覆盖单元格
+            - 当 skip_none=False（默认）时，会用 None 覆盖对应的单元格，保持向后兼容
 
         Args:
-            data: 需要写入的值可以是二维数组、数组[字典]
-            write_row: 要写入的起始行
+            data: 需要写入的值，可以是二维数组或字典数组
+                - 字典格式: [{"列名1": 值1, "列名2": 值2}, ...]
+                - 列表格式: [[值1, 值2, ...], [值3, 值4, ...], ...]
+            write_row: 要写入的起始行（默认从第2行开始）
+            skip_none: 是否跳过 None 值（默认 False，保持向后兼容）
+                - False: 会用 None 覆盖单元格（传统行为）
+                - True: 只写入非 None 数据，不覆盖单元格中的 None
+            partition_strategy: 数据分区策略，仅在 skip_none=True 时生效（默认 'auto'）
+                - 'horizontal': 优先横向分割
+                - 'vertical': 优先纵向分割
+                - 'auto': 自动选择分割数量最少的策略
+
+        Example:
+            >>> # 示例1: 传统用法（覆盖 None）
+            >>> sheet.write_row([
+            >>>     {"姓名": "张三", "年龄": 25, "部门": None},
+            >>>     {"姓名": "李四", "年龄": None, "部门": "技术部"}
+            >>> ], write_row=2)
+            >>> # None 会清空对应单元格
+            >>>
+            >>> # 示例2: 智能模式（跳过 None）
+            >>> sheet.write_row([
+            >>>     {"姓名": "张三", "年龄": 25, "部门": None},
+            >>>     {"姓名": "李四", "年龄": None, "部门": "技术部"}
+            >>> ], write_row=2, skip_none=True)
+            >>> # 只会写入 "张三", 25, "李四", "技术部"，不会覆盖 None 位置
+            >>>
+            >>> # 示例3: 列表格式
+            >>> sheet.write_row([
+            >>>     [1, None, 3],
+            >>>     [4, 5, None]
+            >>> ], write_row=5, skip_none=True)
         """
-        write_list = []
-        header = self.header
-        heads_len = len(header)
+        # 1. 数据预处理：将字典转换为二维数组（复用公共方法）
+        write_list, header, heads_len = self._convert_data_to_grid(data, self.header, write_row)
 
-        if write_row == 1:
-            if not isinstance(data[0], list):
-                raise ValueError("此方法依赖表头，无法覆盖写入第一行，如有需要，请将写入数组的第一个元素设置为数组类型表示为表头。"
-                                 "或者使用 write() 方法。")
-            if isinstance(data[0], list):
-                header = data[0]
-                heads_len = len(header)
+        # 2. 如果 skip_none=False，使用传统方式（直接写入全部数据）
+        if not skip_none:
+            cell_range = f'A{write_row}:{num_to_excel_col(heads_len)}{len(write_list)+write_row-1}'
+            self.write(cell_range, write_list)
+            return
 
-        for row in data:
-            if isinstance(row, dict):
-                write_list.append([row[col_name] if col_name in row.keys() else None
-                                   for col_name in header])
-            elif isinstance(row, list):
-                row = (row + [None] * heads_len)[:heads_len]  # 对齐数组长度，否则写入的时候会报错
-                write_list.append(row)
-            else:
-                raise ValueError(f"需要写入的值可以是二维数组、数组[字典]。当前数组元素类型是: {type(row)}")
+        # 3. skip_none=True 时，使用智能分区批量写入
+        # 使用 partition_grid 将数据分成多个矩形区域
+        rectangles = partition_grid(write_list, strategy=partition_strategy)
 
-        cell_range = f'A{write_row}:{num_to_excel_col(heads_len)}{len(write_list)+write_row-1}'
-        self.write(cell_range, write_list)
+        if not rectangles:
+            # 没有有效数据，直接返回
+            return
+
+        # 4. 将矩形区域转换为批量写入格式
+        ranges_data = []
+        for rect in rectangles:
+            top_left = rect['top_left']  # (row_idx, col_idx)
+            bottom_right = rect['bottom_right']
+            values = rect['values']
+
+            # 计算实际的行列位置（相对于 write_row 和 A 列）
+            start_row = write_row + top_left[0]
+            end_row = write_row + bottom_right[0]
+            start_col = num_to_excel_col(top_left[1] + 1)
+            end_col = num_to_excel_col(bottom_right[1] + 1)
+
+            # 构造范围字符串
+            range_str = f"{start_col}{start_row}:{end_col}{end_row}"
+
+            # 如果是横向矩形，values 是一维数组，需要转为二维
+            if rect['type'] == 'horizontal':
+                values = [values]
+
+            ranges_data.append({
+                "range": range_str,
+                "values": values
+            })
+
+        # 5. 使用批量写入 API
+        self.write_batch(ranges_data)
 
     def write_row_by_hang_header(
         self,
@@ -171,10 +309,10 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         write_row: int = 2,
     ):
         """
-        根据指定的“悬挂表头”写入行数据。即：可以指定任意一行范围内的数据为临时表头，并按照此表头写入数据。
+        根据指定的"悬挂表头"写入行数据。即：可以指定任意一行范围内的数据为临时表头，并按照此表头写入数据。
 
         Note:
-            - 如果表头之间有不想写入的数据，应该分为若干个“悬挂头”分别写入，此方法不能自动跳过不想写入的数据
+            - 如果表头之间有不想写入的数据，应该分为若干个"悬挂头"分别写入，此方法不能自动跳过不想写入的数据
 
         Args:
             hang_header_range: 悬挂头的范围（ 如：C22:JK22, DF345:DL345 ），一个行范围，多行报错
@@ -182,12 +320,13 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
             write_row: 相对于悬挂头来说的开始行数，悬挂头为第 1 行，默认开始从第 2 行写入
         """
         if write_row <= 1:
-            raise ValueError(f"write_row")
+            raise ValueError(f"write_row 参数必须大于1")
+
         # 1. 判断行的范围是否正确
         a, b = match_row_num_by_range(hang_header_range)
         if a != b:
             raise ValueError(f"hang_header 参数单元格范围表示应该为一行数据的范围，如：A2:F2。当前为：{hang_header_range}")
-        write_row = int(a) + write_row - 1  # 写入数据相对于表头的偏移量
+        actual_write_row = int(a) + write_row - 1  # 写入数据相对于表头的偏移量
 
         # 2. 校验输入 range 正确
         start_col, end_col = match_col_letter_by_range(hang_header_range)
@@ -199,19 +338,11 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         # 3. 获取行的内容作为临时表头
         header = self.read_human(hang_header_range)[0]
 
-        # 4. 将数据按照表头对齐
-        write_list = []
-        for row in data:
-            if isinstance(row, dict):
-                write_list.append([row[col_name] if col_name in row.keys() else None
-                                   for col_name in header])
-            elif isinstance(row, list):
-                row = (row + [None] * len(header))[:len(header)]
-                write_list.append(row)
-            else:
-                raise ValueError(f"需要写入的值可以是二维数组、数组[字典]。当前数组元素类型是: {type(row)}")
+        # 4. 将数据按照表头对齐（复用公共方法）
+        write_list, _, heads_len = self._convert_data_to_grid(data, header, write_row=2)  # write_row>1 避免表头处理逻辑
+
         # 5. 写入数据
-        cell_range = f'{start_col}{write_row}:{end_col}{len(write_list) + write_row - 1}'
+        cell_range = f'{start_col}{actual_write_row}:{end_col}{len(write_list) + actual_write_row - 1}'
         self.write(cell_range, write_list)
 
     def replace_placeholder(self, sheet_range: str, **kwargs):
@@ -230,7 +361,7 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         insert_number: int = 1,
         inherit_style: bool = True,
     ):
-        """向指定列左边插入指定数量的空列，inherit_style 为 True 表示插入列是否复制起始列的单元格样式。"""
+        """向指定列右边插入指定数量的空列，inherit_style 为 True 表示插入列是否复制起始列的单元格样式。"""
         col_num = excel_col_to_num(column_letter)
         if inherit_style:
             self.insert_series(col_num, col_num + insert_number, "COLUMNS", "BEFORE")
@@ -278,6 +409,15 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         data = self.read(sheet_range, value_render_option="Formula", date_time_render_option='')
         return data
 
+    def read_column(self, column_name: str) -> List[Any]:
+        """
+        根据列名读取对应列的所有数据，返回一维数组。
+        """
+        col_index = self.get_index_by_col_name(column_name)
+        col_letter = num_to_excel_col(col_index)
+        data = self.read_human(f'{col_letter}2:{col_letter}{self.get_sheet_info()["rowCount"]}')
+        return [row[0] for row in data]
+    
     def get_title(self) -> str:
         info = self.get_sheet_info()
         if "title" in info:
