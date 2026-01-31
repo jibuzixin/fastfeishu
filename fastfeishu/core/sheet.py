@@ -222,13 +222,16 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
             - 二维数组的第一个索引值代表行，第二个索引值代表行中单元格的值
             - 当 skip_none=True 时，只写入非 None 的数据，不会用 None 覆盖单元格
             - 当 skip_none=False（默认）时，会用 None 覆盖对应的单元格，保持向后兼容
+            - 当 write_row=1 且第一个元素是列表时，该列表作为新表头
 
         Args:
             data: 需要写入的值，可以是二维数组或字典数组
                 - 字典格式: [{"列名1": 值1, "列名2": 值2}, ...]
                 - 列表格式: [[值1, 值2, ...], [值3, 值4, ...], ...]
+                - 混合模式: [{"列名1": 值1, "列名2": 值2}, [值1, 值2, ...], ...]
+                - 当 write_row=1 且第一个元素是列表时，该列表作为新表头
             write_row: 要写入的起始行（默认从第2行开始）
-            skip_none: 是否跳过 None 值（默认 False，保持向后兼容）
+            skip_none: 是否跳过 None 值（默认 True）
                 - False: 会用 None 覆盖单元格（传统行为）
                 - True: 只写入非 None 数据，不覆盖单元格中的 None
             partition_strategy: 数据分区策略，仅在 skip_none=True 时生效（默认 'auto'）
@@ -257,67 +260,85 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
             >>>     [4, 5, None]
             >>> ], write_row=5, skip_none=True)
         """
-        # 1. 数据预处理：将字典转换为二维数组（复用公共方法）
-        write_list, header, heads_len = self._convert_data_to_grid(data, self.header, write_row)
+        # 1. 获取表头
+        header = self.header
 
-        # 2. 如果 skip_none=False，使用传统方式（直接写入全部数据）
-        if not skip_none:
-            cell_range = f'A{write_row}:{num_to_excel_col(heads_len)}{len(write_list)+write_row-1}'
-            self.write(cell_range, write_list)
-            return
+        # 2. 处理 write_row=1 的特殊情况
+        if write_row == 1:
+            if not isinstance(data[0], list):
+                raise ValueError(
+                    "此方法依赖表头，无法覆盖写入第一行，如有需要，请将写入数组的第一个元素设置为数组类型表示为表头。"
+                    "或者使用 write() 方法。"
+                )
+            # 第一个元素作为新表头
+            header = data[0]
+            self.write(f'A1:{num_to_excel_col(len(header))}1', [header])
+            # 如果只有表头，直接返回
+            if len(data) == 1:
+                return
+            # 继续处理剩余数据
+            data = data[1:]
+            write_row = 2
 
-        # 3. skip_none=True 时，使用智能分区批量写入
-        # 使用 partition_grid 将数据分成多个矩形区域
-        rectangles = partition_grid(write_list, strategy=partition_strategy)
-
-        if not rectangles:
-            # 没有有效数据，直接返回
-            return
-
-        # 4. 将矩形区域转换为批量写入格式
-        ranges_data = []
-        for rect in rectangles:
-            top_left = rect['top_left']  # (row_idx, col_idx)
-            bottom_right = rect['bottom_right']
-            values = rect['values']
-
-            # 计算实际的行列位置（相对于 write_row 和 A 列）
-            start_row = write_row + top_left[0]
-            end_row = write_row + bottom_right[0]
-            start_col = num_to_excel_col(top_left[1] + 1)
-            end_col = num_to_excel_col(bottom_right[1] + 1)
-
-            # 构造范围字符串
-            range_str = f"{start_col}{start_row}:{end_col}{end_row}"
-
-            # 如果是横向矩形，values 是一维数组，需要转为二维
-            if rect['type'] == 'horizontal':
-                values = [values]
-
-            ranges_data.append({
-                "range": range_str,
-                "values": values
-            })
-
-        # 5. 使用批量写入 API
-        self.write_batch(ranges_data)
+        # 3. 构造表头范围并写入数据
+        hang_header_range = f'A1:{num_to_excel_col(len(header))}1'
+        self.write_row_by_hang_header(
+            hang_header_range=hang_header_range,
+            data=data,
+            write_row=write_row,
+            skip_none=skip_none,
+            partition_strategy=partition_strategy
+        )
 
     def write_row_by_hang_header(
         self,
         hang_header_range: str,
         data: List[Union[List[Any], Dict[str, Any]]],
         write_row: int = 2,
+        skip_none: bool = True,
+        partition_strategy: Literal['horizontal', 'vertical', 'auto'] = 'auto'
     ):
         """
         根据指定的"悬挂表头"写入行数据。即：可以指定任意一行范围内的数据为临时表头，并按照此表头写入数据。
 
+        该方法支持：
+        - 字典和列表两种数据格式
+        - 可选的 None 值跳过功能（避免覆盖已有数据）
+
         Note:
-            - 如果表头之间有不想写入的数据，应该分为若干个"悬挂头"分别写入，此方法不能自动跳过不想写入的数据
+            - 当 skip_none=True（默认）时，只写入非 None 的数据，不会用 None 覆盖单元格
+            - 当 skip_none=False 时，会用 None 覆盖对应的单元格，保持向后兼容
 
         Args:
             hang_header_range: 悬挂头的范围（ 如：C22:JK22, DF345:DL345 ），一个行范围，多行报错
             data: 需要写入的值可以是二维数组、数组[字典]
+                - 字典格式: [{"列名1": 值1, "列名2": 值2}, ...]
+                - 列表格式: [[值1, 值2, ...], [值3, 值4, ...], ...]
+                - 混合模式: [{"列名1": 值1, "列名2": 值2}, [值1, 值2, ...], ...]
             write_row: 相对于悬挂头来说的开始行数，悬挂头为第 1 行，默认开始从第 2 行写入
+            skip_none: 是否跳过 None 值（默认 True，保持向后兼容）
+                - False: 会用 None 覆盖单元格（传统行为）
+                - True: 只写入非 None 数据，不覆盖单元格中的 None
+            partition_strategy: 数据分区策略，仅在 skip_none=True 时生效（默认 'auto'）
+                - 'horizontal': 优先横向分割
+                - 'vertical': 优先纵向分割
+                - 'auto': 自动选择分割数量最少的策略
+
+        Example:
+            >>> # 示例1: 传统用法（覆盖 None）
+            >>> sheet.write_row_by_hang_header(
+            >>>     "C2:E2",
+            >>>     [{"姓名": "张三", "年龄": 25, "部门": None}],
+            >>>     write_row=2
+            >>> )
+            >>>
+            >>> # 示例2: 智能模式（跳过 None）
+            >>> sheet.write_row_by_hang_header(
+            >>>     "C2:E2",
+            >>>     [{"姓名": "张三", "年龄": 25, "部门": None}],
+            >>>     write_row=2,
+            >>>     skip_none=True
+            >>> )
         """
         if write_row <= 1:
             raise ValueError(f"write_row 参数必须大于1")
@@ -341,19 +362,111 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         # 4. 将数据按照表头对齐（复用公共方法）
         write_list, _, heads_len = self._convert_data_to_grid(data, header, write_row=2)  # write_row>1 避免表头处理逻辑
 
-        # 5. 写入数据
-        cell_range = f'{start_col}{actual_write_row}:{end_col}{len(write_list) + actual_write_row - 1}'
-        self.write(cell_range, write_list)
+        # 5. 如果 skip_none=False，使用传统方式（直接写入全部数据）
+        if not skip_none:
+            cell_range = f'{start_col}{actual_write_row}:{end_col}{len(write_list) + actual_write_row - 1}'
+            self.write(cell_range, write_list)
+            return
+
+        # 6. skip_none=True 时，使用智能分区批量写入
+        # 使用 partition_grid 将数据分成多个矩形区域
+        rectangles = partition_grid(write_list, strategy=partition_strategy)
+
+        if not rectangles:
+            # 没有有效数据，直接返回
+            return
+
+        # 7. 将矩形区域转换为批量写入格式
+        ranges_data = []
+        for rect in rectangles:
+            top_left = rect['top_left']  # (row_idx, col_idx)
+            bottom_right = rect['bottom_right']
+            values = rect['values']
+
+            # 计算实际的行列位置（相对于 actual_write_row 和 start_col）
+            rect_start_row = actual_write_row + top_left[0]
+            rect_end_row = actual_write_row + bottom_right[0]
+            rect_start_col = num_to_excel_col(start_col_num + top_left[1])
+            rect_end_col = num_to_excel_col(start_col_num + bottom_right[1])
+
+            # 构造范围字符串
+            range_str = f"{rect_start_col}{rect_start_row}:{rect_end_col}{rect_end_row}"
+
+            # 如果是横向矩形，values 是一维数组，需要转为二维
+            if rect['type'] == 'horizontal':
+                values = [values]
+
+            ranges_data.append({
+                "range": range_str,
+                "values": values
+            })
+
+        # 8. 使用批量写入 API
+        self.write_batch(ranges_data)
 
     def replace_placeholder(self, sheet_range: str, **kwargs):
-        """将 sheet_range 范围内中出现的占位符替换为传入的键值对"""
+        """
+        将 sheet_range 范围内中出现的占位符替换为传入的键值对。
+
+        使用批量写入 API，只更新包含占位符的单元格，性能更好。
+
+        Args:
+            sheet_range: 要处理的单元格范围，如 "A1:C10"
+            **kwargs: 占位符的键值对，用于替换占位符
+
+        Example:
+            >>> # 假设单元格中有 "Hello {name}, you are {age} years old"
+            >>> sheet.replace_placeholder("A1:B2", name="Alice", age=30)
+            >>> # 结果: "Hello Alice, you are 30 years old"
+        """
+        # 1. 读取原始数据
         read_range = self.read_raw(sheet_range)
+
+        # 2. 收集需要更新的单元格
+        ranges_data = []
+
+        # 解析起始位置
+        start_col, _ = match_col_letter_by_range(sheet_range)
+        start_row, _ = match_row_num_by_range(sheet_range)
+        start_col_num = excel_col_to_num(start_col)
+        start_row_num = int(start_row)
+
+        # 3. 遍历数据，只对包含占位符的单元格进行替换
         for r, row in enumerate(read_range):
             for c, cell in enumerate(row):
                 if cell is not None and isinstance(cell, str):
-                    read_range[r][c] = cell.format(**kwargs)
-        # TODO 改成写多范围可以提升意料之外情况的影响
-        self.write(sheet_range, read_range)
+                    # 检查是否为纯占位符（如 {name}）
+                    stripped = cell.strip()
+                    if stripped.startswith('{') and stripped.endswith('}') and stripped.count('{') == 1:
+                        # 纯占位符：直接替换为原始值（保持类型）
+                        key = stripped[1:-1]
+                        if key in kwargs:
+                            actual_row = start_row_num + r
+                            actual_col = num_to_excel_col(start_col_num + c)
+                            range_str = f"{actual_col}{actual_row}:{actual_col}{actual_row}"
+                            ranges_data.append({
+                                "range": range_str,
+                                "values": [[kwargs[key]]]  # 保持原始类型
+                            })
+                    else:
+                        # 混合文本：使用 format（结果为字符串）
+                        try:
+                            formatted_value = cell.format(**kwargs)
+                            if formatted_value != cell:
+                                actual_row = start_row_num + r
+                                actual_col = num_to_excel_col(start_col_num + c)
+                                range_str = f"{actual_col}{actual_row}:{actual_col}{actual_row}"
+                                ranges_data.append({
+                                    "range": range_str,
+                                    "values": [[formatted_value]]
+                                })
+                        except (KeyError, ValueError):
+                            # 格式化失败，跳过
+                            pass
+
+        # 4. 使用批量写入 API 更新所有需要替换的单元格
+        if ranges_data:
+            self.write_batch(ranges_data)
 
     def insert_column_to_right(
         self,
