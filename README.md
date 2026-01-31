@@ -106,6 +106,19 @@ human_data = s.read_human('a2:Ai33')
 print(human_data)
 ```
 
+#### 读取指定列
+
+```python
+from fastfeishu.feishu import FeiShuSheet
+
+if __name__ == '__main__':
+    s = FeiShuSheet('飞书链接', readonly=True)
+
+    # 根据列名读取整列数据（从第2行开始）
+    column_data = s.read_column('CaseID')
+    print(column_data)  # [1, 2, 3, 4, ...]
+```
+
 #### 遍历整张表（流式读取）
 
 ```python
@@ -206,12 +219,29 @@ from fastfeishu.feishu import FeiShuSheet
 if __name__ == '__main__':
     s = FeiShuSheet('飞书链接')
 
-    # 使用字典写入
+    # 使用字典写入（支持字典和列表混合）
     s.write_row([
         {'CaseID': 1, '意图类型': '这是什么', '端到端回复': '回复内容'},
         {'CaseID': 2, '意图类型': 'type', '端到端回复': '回复内容2'},
         [3, None, None, "这是什么东西"],  # 支持数组
     ], write_row=4)  # 从第4行开始写入
+
+    # skip_none 参数：控制 None 值处理（默认 True）
+    s.write_row([
+        {'CaseID': 1, '意图类型': None, '端到端回复': '回复内容'},
+        {'CaseID': 2, '意图类型': 'type', '端到端回复': None},
+    ], write_row=4, skip_none=True)  # None 不会覆盖原有数据
+
+    # skip_none=False：使用 None 覆盖单元格
+    s.write_row([
+        {'CaseID': 1, '意图类型': None, '端到端回复': '回复内容'},
+    ], write_row=4, skip_none=False)  # None 会覆盖单元格为空
+
+    # partition_strategy 参数：数据分区策略（性能优化，仅在 skip_none=True 时有效）
+    # - 'auto'（默认）：自动选择最优策略
+    # - 'horizontal'：横向分割
+    # - 'vertical'：纵向分割
+    s.write_row(data, write_row=4, skip_none=True, partition_strategy='horizontal')
 ```
 
 #### 悬挂表头写入
@@ -222,14 +252,33 @@ from fastfeishu.feishu import FeiShuSheet
 if __name__ == '__main__':
     s = FeiShuSheet('飞书链接')
 
-    # 使用自定义表头范围
+    # 使用自定义表头范围（可指定任意行作为表头）
     s.write_row_by_hang_header(
         hang_header_range='A1:D1',  # 表头范围
-        data=[  # 数据
+        data=[  # 数据（支持字典和列表混合）
             {'CaseID': 1, '意图类型': 'type', '端到端回复': '回复内容'},
             {'CaseID': 2, '意图类型': 'type', '端到端回复': '回复内容2'},
         ],
-        write_row=2  # 数据从第2行开始
+        write_row=2  # 数据从第2行开始（相对于表头行）
+    )
+
+    # skip_none 参数：控制 None 值处理（默认 True）
+    s.write_row_by_hang_header(
+        hang_header_range='A1:D1',
+        data=[
+            {'CaseID': 1, '意图类型': None, '端到端回复': '回复内容'},
+        ],
+        write_row=2,
+        skip_none=True  # None 不会覆盖原有数据
+    )
+
+    # partition_strategy 参数：数据分区策略（仅在 skip_none=True 时有效）
+    s.write_row_by_hang_header(
+        hang_header_range='C22:JK22',  # 可以是任意行范围
+        data=data,
+        write_row=2,
+        skip_none=True,
+        partition_strategy='auto'  # 'auto'（默认）, 'horizontal', 'vertical'
     )
 ```
 
@@ -297,7 +346,7 @@ if __name__ == '__main__':
 
 ### 2.4 高级操作
 
-#### 替换占位符
+#### 替换占位符（支持类型保持）
 
 ```python
 from fastfeishu.feishu import FeiShuSheet
@@ -305,15 +354,30 @@ from fastfeishu.feishu import FeiShuSheet
 if __name__ == '__main__':
     s = FeiShuSheet('飞书链接')
 
-    # 替换目标范围内，单元格中的占位符为实际值
-    # 如：将 a2:c2 范围的单元格中包含 {name}, {age}, {city} 替换为实际的值
-    # 注意当前只支持字符串
+    # 智能类型替换：
+    # 1. 纯占位符（如 {price}）会保持原始类型
+    # 2. 混合文本（如 "价格：{price}元"）会转为字符串
+
+    # 示例：假设单元格内容为
+    # A1: {name}              -> 纯占位符
+    # A2: {age}               -> 纯占位符
+    # A3: {price}             -> 纯占位符
+    # A4: Hello {name}!       -> 混合文本
+    # A5: 价格：{price}元     -> 混合文本
+
     s.replace_placeholder(
-        sheet_range='a2:c2',
+        sheet_range='A1:A5',
         name='张三',
-        age=25,
-        city='北京'
+        age=25,           # 数字类型
+        price=99.99       # 浮点数类型
     )
+
+    # 替换后结果：
+    # A1: 张三                 (字符串)
+    # A2: 25                   (数字类型保持)
+    # A3: 99.99                (浮点数类型保持)
+    # A4: Hello 张三!          (字符串)
+    # A5: 价格：99.99元        (字符串)
 ```
 
 #### Sheet属性配置
@@ -439,16 +503,18 @@ if __name__ == '__main__':
 - `read_raw(sheet_range)` - 读取原始数据（含公式）
 - `read_human(sheet_range)` - 人类可读方式读取
 - `read_images(sheet_range)` - 读取图片
+- `read_column(column_name)` - 读取指定列（返回一维数组）
 - `iterrows(start_row=2, end_row=None, batch_size=500)` - 流式迭代
 - `get_title()` - 获取标题
 - `get_header()` - 获取表头
 
 **写入方法**:
 - `write(sheet_range, data_list)` - 写入范围
-- `write_row(data, write_row=2)` - 写入行
+- `write_row(data, write_row=2, skip_none=True, partition_strategy='auto')` - 写入行
 - `write_column(column_name, data_list, start_row=2)` - 写入列
-- `write_row_by_hang_header(hang_header_range, data, write_row=2)` - 悬挂表头写入
+- `write_row_by_hang_header(hang_header_range, data, write_row=2, skip_none=True, partition_strategy='auto')` - 悬挂表头写入
 - `write_image(cell, image, image_name="cell.png")` - 写入图片
+- `append_to_column(column_name, data_list)` - 追加写入列数据
 
 **删除/插入方法**:
 - `delete_series(start_index, end_index)` - 删除行列
@@ -458,9 +524,10 @@ if __name__ == '__main__':
 - `insert_column_to_left(column_letter, insert_number=1)` - 左侧插入列
 
 **高级方法**:
-- `replace_placeholder(sheet_range, **kwargs)` - 替换占位符
+- `replace_placeholder(sheet_range, **kwargs)` - 替换占位符（智能类型保持）
 - `get_index_by_col_name(col_name)` - 根据列名获取索引
 - `get_letter_by_col_name(col_name)` - 根据列名获取字母
+- `write_batch(value_ranges)` - 批量写入多个范围
 
 **图片方法**:
 - `download_image_to_path(file_token, save_path)` - 下载到路径
