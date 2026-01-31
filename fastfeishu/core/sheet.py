@@ -435,21 +435,34 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         for r, row in enumerate(read_range):
             for c, cell in enumerate(row):
                 if cell is not None and isinstance(cell, str):
-                    # 尝试格式化（替换占位符）
-                    try:
-                        formatted_value = cell.format(**kwargs)
-                        # 只有当值发生变化时才写入
-                        if formatted_value != cell:
+                    # 检查是否为纯占位符（如 {name}）
+                    stripped = cell.strip()
+                    if stripped.startswith('{') and stripped.endswith('}') and stripped.count('{') == 1:
+                        # 纯占位符：直接替换为原始值（保持类型）
+                        key = stripped[1:-1]
+                        if key in kwargs:
                             actual_row = start_row_num + r
                             actual_col = num_to_excel_col(start_col_num + c)
                             range_str = f"{actual_col}{actual_row}:{actual_col}{actual_row}"
                             ranges_data.append({
                                 "range": range_str,
-                                "values": [[formatted_value]]
+                                "values": [[kwargs[key]]]  # 保持原始类型
                             })
-                    except (KeyError, ValueError):
-                        # 如果格式化失败（例如缺少占位符的值），跳过此单元格
-                        pass
+                    else:
+                        # 混合文本：使用 format（结果为字符串）
+                        try:
+                            formatted_value = cell.format(**kwargs)
+                            if formatted_value != cell:
+                                actual_row = start_row_num + r
+                                actual_col = num_to_excel_col(start_col_num + c)
+                                range_str = f"{actual_col}{actual_row}:{actual_col}{actual_row}"
+                                ranges_data.append({
+                                    "range": range_str,
+                                    "values": [[formatted_value]]
+                                })
+                        except (KeyError, ValueError):
+                            # 格式化失败，跳过
+                            pass
 
         # 4. 使用批量写入 API 更新所有需要替换的单元格
         if ranges_data:
