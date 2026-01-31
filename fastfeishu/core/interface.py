@@ -67,6 +67,8 @@ class FeiShuInterface(abc.ABC):
             hang_header_range: str,
             data: List[Union[List[Any], Dict[str, Any]]],
             write_row: int = 2,
+            skip_none: bool = True,
+            partition_strategy: Literal['horizontal', 'vertical', 'auto'] = 'auto'
     ): ...
 
     @abc.abstractmethod
