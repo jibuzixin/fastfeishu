@@ -134,6 +134,11 @@ if __name__ == '__main__':
     # 自定义起始行、结束行、批次大小
     for row in s.iterrows(start_row=5, end_row=100, batch_size=1000):
         print(row)
+
+    # 上述默认读取的单元格内容为适合人类阅读的
+    # 更改 read_method 方法引用为 read_raw 可以读取原始单元格的值（比如带文本的链接、公式表达式）
+    for row in s.iterrows(read_method=s.read_raw):
+        print(row)
 ```
 
 #### 读取图片
