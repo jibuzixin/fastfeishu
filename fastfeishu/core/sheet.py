@@ -1,7 +1,7 @@
 import pandas as pd
 
 from fastfeishu.core.operations import FeiShuSheetOperations
-from typing import Union, Any, Optional, List, Generator, Dict, Literal, Type, Tuple
+from typing import Union, Any, Optional, List, Generator, Dict, Literal, Type, Tuple, Callable
 from fastfeishu.utils import num_to_excel_col
 from fastfeishu.exceptions.exception import FeiShuColumnNotExist, FeiShuException
 from fastfeishu.core.interface import FeiShuInterface
@@ -545,6 +545,7 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         batch_size: int = 500,
         return_type: Type[Union[List[Any], Dict[str, Any]]] = dict,
         header: Optional[List[str]] = None,  # 自定义表头
+        read_method: Callable[str, List[List[Any]]] = None,
     ) -> Generator[Union[tuple[int, dict[str, Any]], tuple[int, list[Any]]], None, None]:
         """
         流式迭代读取飞书表格每一行，像本地列表一样使用，内存安全。
@@ -557,6 +558,7 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
             - 如果 start_row == 1 且 return_type=dict，则返回 dict，表头使用 Excel 列字母索引。
             - 如果 return_type=list，则返回 list，没有表头。
             - 用户可以通过 header 参数自定义表头。
+            - read_method 方法引用是为了满足不同的读单元表格内容
 
         Example:
             >>> for index, row in sheet.iterrows(start_row=2):
@@ -574,11 +576,14 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
             batch_size: 每次读取行数，默认 500
             return_type: 返回类型，可以是 list 或 dict，默认 dict
             header: 自定义表头，可选
+            read_method: 读取 sheet 单元格的方法引用，可以是此类方法的 read, read_huamn（默认）, read_raw（可以返回公式）
 
         Returns:
             生成器，每行是 (索引, 数据) 元组，数据为 dict 或 list
         """
 
+        if read_method is None:
+            read_method = self.read_human
         info = self.get_sheet_info()
         max_row = end_row or info["rowCount"]
 
@@ -600,7 +605,7 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
             range_str = f"A{current_row}:{num_to_excel_col(info['columnCount'])}{batch_end}"
 
             try:
-                batch_data = self.read_human(range_str)
+                batch_data = read_method(range_str)
             except Exception as e:
                 raise FeiShuException(f"读取行 {current_row}~{batch_end} 失败，范围: {range_str}, 错误: {e}")
 

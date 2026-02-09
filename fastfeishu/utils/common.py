@@ -150,9 +150,9 @@ def get_real_extension_from_bytes(data: bytes) -> str:
         return ".tiff"
     return ".jpg"  # 默认
 
-async def download_image(session: aiohttp.ClientSession, 
-                         url: str, 
-                         semaphore: asyncio.Semaphore) -> Tuple[bool, str, Optional[bytes], str]:
+async def _download_image(session: aiohttp.ClientSession,
+                          url: str,
+                          semaphore: asyncio.Semaphore) -> Tuple[bool, str, Optional[bytes], str]:
     """
     单个图片下载协程
     返回: (success, msg, content, real_ext)
@@ -215,7 +215,7 @@ async def batch_download_images(
     async with aiohttp.ClientSession(headers=default_headers, timeout=timeout, connector=connector) as session:
         tasks = []
         for idx, url in enumerate(urls):
-            task = download_image(session, url, semaphore)
+            task = _download_image(session, url, semaphore)
             tasks.append((idx, url, task))
         
         success_list = []

@@ -187,10 +187,17 @@ class FeiShuSheetOperations:
             self._alter_header = True
 
     def write_image(self, cell, image, image_name="cell.png"):
+        """
+        [写入图片](https://open.feishu.cn/document/server-docs/docs/sheets-v3/data-operation/write-images)
+
+        :param cell: 示例: 'a2', 'B33', 'df56'
+        :param image: 可传入一个本地图片的路径或者已经加载好的二进制数据
+        :param image_name: 图片名称
+        """
         self._deny_if_readonly()
         response = self._request.write_image(cell, image, image_name)
         _response_json(response)
-        self._detect_header_modification(cell)
+        self._detect_header_modification(f'{cell}:{cell}')
 
     def create_sheet(self, title: str, index: int = 0) -> Self:
         """返回新创建的 FeiShuSheet 对象"""
