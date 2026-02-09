@@ -66,7 +66,7 @@ OiS_IDAAS_SERVICE_ID=''
 #### 单元格读取、范围读取
 
 ```python
-from fastfeishu.feishu import FeiShuSheet
+from fastfeishu.core import FeiShuSheet
 
 if __name__ == '__main__':
     # 只读模式
@@ -109,7 +109,7 @@ print(human_data)
 #### 读取指定列
 
 ```python
-from fastfeishu.feishu import FeiShuSheet
+from fastfeishu.core import FeiShuSheet
 
 if __name__ == '__main__':
     s = FeiShuSheet('飞书链接', readonly=True)
@@ -122,7 +122,7 @@ if __name__ == '__main__':
 #### 遍历整张表（流式读取）
 
 ```python
-from fastfeishu.feishu import FeiShuSheet
+from fastfeishu.core import FeiShuSheet
 
 if __name__ == '__main__':
     s = FeiShuSheet('飞书链接', readonly=True)
@@ -144,7 +144,7 @@ if __name__ == '__main__':
 #### 读取图片
 
 ```python
-from fastfeishu.feishu import FeiShuSheet
+from fastfeishu.core import FeiShuSheet
 
 if __name__ == '__main__':
     s = FeiShuSheet('飞书链接')
@@ -171,7 +171,7 @@ if __name__ == '__main__':
 #### 写入范围
 
 ```python
-from fastfeishu.feishu import FeiShuSheet
+from fastfeishu.core import FeiShuSheet
 
 if __name__ == '__main__':
     s = FeiShuSheet('飞书链接')
@@ -190,7 +190,7 @@ if __name__ == '__main__':
 #### 按列名写入（自动新增列）
 
 ```python
-from fastfeishu.feishu import FeiShuSheet
+from fastfeishu.core import FeiShuSheet
 
 if __name__ == '__main__':
     s = FeiShuSheet('飞书链接')
@@ -205,7 +205,7 @@ if __name__ == '__main__':
 #### 按列名追加写入列数据（不会自动新建列）
 
 ```python
-from fastfeishu.feishu import FeiShuSheet
+from fastfeishu.core import FeiShuSheet
 
 if __name__ == '__main__':
     s = FeiShuSheet('飞书链接')
@@ -219,7 +219,7 @@ if __name__ == '__main__':
 #### 按列名写入行（支持字典或二维数组）
 
 ```python
-from fastfeishu.feishu import FeiShuSheet
+from fastfeishu.core import FeiShuSheet
 
 if __name__ == '__main__':
     s = FeiShuSheet('飞书链接')
@@ -252,7 +252,7 @@ if __name__ == '__main__':
 #### 悬挂表头写入
 
 ```python
-from fastfeishu.feishu import FeiShuSheet
+from fastfeishu.core import FeiShuSheet
 
 if __name__ == '__main__':
     s = FeiShuSheet('飞书链接')
@@ -290,7 +290,7 @@ if __name__ == '__main__':
 #### 写入图片
 
 ```python
-from fastfeishu.feishu import FeiShuSheet
+from fastfeishu.core import FeiShuSheet
 
 if __name__ == '__main__':
     s = FeiShuSheet('飞书链接')
@@ -310,7 +310,7 @@ if __name__ == '__main__':
 #### 删除行列
 
 ```python
-from fastfeishu.feishu import FeiShuSheet
+from fastfeishu.core import FeiShuSheet
 
 if __name__ == '__main__':
     s = FeiShuSheet('飞书链接')
@@ -337,7 +337,7 @@ if __name__ == '__main__':
 #### 插入列
 
 ```python
-from fastfeishu.feishu import FeiShuSheet
+from fastfeishu.core import FeiShuSheet
 
 if __name__ == '__main__':
     s = FeiShuSheet('飞书链接')
@@ -354,7 +354,7 @@ if __name__ == '__main__':
 #### 替换占位符（支持类型保持）
 
 ```python
-from fastfeishu.feishu import FeiShuSheet
+from fastfeishu.core import FeiShuSheet
 
 if __name__ == '__main__':
     s = FeiShuSheet('飞书链接')
@@ -388,7 +388,7 @@ if __name__ == '__main__':
 #### Sheet属性配置
 
 ```python
-from fastfeishu.feishu import FeiShuSheet
+from fastfeishu.core import FeiShuSheet
 from fastfeishu.models.sheet_properties import SheetProperties, Protect
 
 if __name__ == '__main__':
@@ -407,7 +407,7 @@ if __name__ == '__main__':
         .hidden(False) \
         .frozen_col_count(3) \
         .frozen_row_count(2) \
-        .protect(protect)
+        .protect(protect) \
         .build()
 
     s.update_sheet_properties(properties)
@@ -418,7 +418,7 @@ if __name__ == '__main__':
 ### 3.1 FeiShuUtil 工具类
 
 ```python
-from fastfeishu.feishu import FeiShuSheet, FeiShuUtil
+from fastfeishu.core import FeiShuSheet, FeiShuUtil
 from typing import List, Dict, Any
 import pandas as pd
 
@@ -447,7 +447,7 @@ if __name__ == '__main__':
 ### 3.2 自定义数据源
 
 ```python
-from fastfeishu.feishu import FeiShuSheet, FeiShuUtil
+from fastfeishu.core import FeiShuSheet, FeiShuUtil
 from typing import Generator
 import pandas as pd
 
@@ -483,7 +483,7 @@ if __name__ == '__main__':
 支持写入特殊单元格类型：
 
 ```python
-from fastfeishu.feishu import FeiShuSheet
+from fastfeishu.core import FeiShuSheet
 from fastfeishu.models.type import TextLink, Email, Formula
 
 if __name__ == '__main__':
