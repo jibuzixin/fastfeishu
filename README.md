@@ -15,7 +15,10 @@ conda activate feishu
 
 # 以源码安装
 cd fastfeishu
-pip install -e . --index-url https://artifactory.ep.chehejia.com/artifactory/api/pypi/licloud-pypi/simple
+pip install -e .
+
+# 如果使用内部 PyPI 源，添加 --index-url 参数
+# pip install -e . --index-url YOUR_INTERNAL_PYPI_URL
 ```
 
 ### 2. 环境变量配置
@@ -26,12 +29,6 @@ pip install -e . --index-url https://artifactory.ep.chehejia.com/artifactory/api
 # 飞书应用凭证
 FS_APP_ID=''           # 飞书应用ID
 FS_APP_SECRET=''       # 飞书应用密钥
-
-# OiS3 凭证（可选）
-OiS_REGION=''
-OiS_IDAAS_CLIENT_ID=''
-OiS_IDAAS_CLIENT_SECRET=''
-OiS_IDAAS_SERVICE_ID=''
 ```
 
 ### 3. 目录结构
@@ -561,4 +558,165 @@ except FeiShuRequestException as e:
 except FeiShuException as e:
     print(f"飞书异常: {e}")
 ```
+
+## 七、测试
+
+### 7.1 安装测试依赖
+
+```bash
+# 安装所有依赖（包括测试依赖）
+pip install -r requirements.txt
+
+# 或者只安装开发测试依赖
+pip install -r requirements-dev.txt
+```
+
+### 7.2 运行测试
+
+#### 运行所有测试
+
+```bash
+# 基本运行
+pytest
+
+# 显示详细信息
+pytest -v
+
+# 显示覆盖率报告
+pytest --cov=fastfeishu --cov-report=html
+```
+
+#### 运行特定类型的测试
+
+```bash
+# 只运行单元测试（快速，不需要API凭证）
+pytest -m unit
+
+# 只运行集成测试（需要配置 .env 中的 API 凭证）
+pytest -m integration
+
+# 排除慢速测试
+pytest -m "not slow"
+```
+
+#### 运行特定测试文件或函数
+
+```bash
+# 运行单个测试文件
+pytest tests/unit/test_request.py
+
+# 运行特定测试类
+pytest tests/unit/test_request.py::TestFeiShuRequest
+
+# 运行特定测试函数
+pytest tests/unit/test_request.py::TestFeiShuRequest::test_parse_feishu_url
+
+# 根据名称模糊匹配
+pytest -k "test_parse"
+```
+
+### 7.3 查看测试覆盖率
+
+```bash
+# 生成HTML覆盖率报告
+pytest --cov=fastfeishu --cov-report=html
+
+# 在浏览器中打开 htmlcov/index.html 查看详细报告
+```
+
+### 7.4 编写自己的测试
+
+#### 单元测试示例
+
+创建测试文件 `tests/unit/test_your_feature.py`：
+
+```python
+import pytest
+from unittest.mock import Mock, patch
+from fastfeishu.your_module import YourClass
+
+
+@pytest.mark.unit
+class TestYourFeature:
+    """你的功能测试"""
+
+    def test_basic_function(self):
+        """测试基本功能"""
+        obj = YourClass()
+        result = obj.some_method()
+        assert result == expected_value
+
+    @patch('fastfeishu.your_module.external_api')
+    def test_with_mock(self, mock_api):
+        """使用mock测试"""
+        mock_api.return_value = "mocked_data"
+        obj = YourClass()
+        result = obj.method_using_api()
+        assert result == "expected"
+```
+
+#### 使用测试Fixtures
+
+测试fixtures在 `tests/conftest.py` 中定义，可直接使用：
+
+```python
+def test_with_fixtures(feishu_url, sample_header, mock_read_response):
+    """使用共享fixtures"""
+    # fixtures会自动注入
+    assert len(sample_header) > 0
+    assert mock_read_response["code"] == 0
+```
+
+#### 参数化测试
+
+```python
+@pytest.mark.parametrize("input,expected", [
+    (1, "A"),
+    (26, "Z"),
+    (27, "AA"),
+])
+def test_num_to_excel_col(input, expected):
+    from fastfeishu.utils import num_to_excel_col
+    assert num_to_excel_col(input) == expected
+```
+
+### 7.5 测试最佳实践
+
+1. **测试命名规范**
+   - 测试文件：`test_*.py`
+   - 测试类：`Test*`
+   - 测试函数：`test_*`
+
+2. **测试结构（AAA模式）**
+   ```python
+   def test_example():
+       # Arrange - 准备数据
+       data = prepare_data()
+
+       # Act - 执行操作
+       result = function_under_test(data)
+
+       # Assert - 验证结果
+       assert result == expected
+   ```
+
+3. **Mock外部依赖**
+   - 单元测试应该mock所有外部API调用
+   - 使用 `@patch` 装饰器或 `pytest-mock`
+
+4. **测试覆盖率目标**
+   - 核心模块：>80%
+   - 工具函数：>90%
+   - 模型类：>70%
+
+### 7.6 测试标记说明
+
+- `@pytest.mark.unit` - 单元测试，不依赖外部服务
+- `@pytest.mark.integration` - 集成测试，需要真实API
+- `@pytest.mark.slow` - 慢速测试
+- `@pytest.mark.smoke` - 冒烟测试
+
+### 7.7 更多信息
+
+详细的测试指南请参考 [tests/README.md](tests/README.md)
 
