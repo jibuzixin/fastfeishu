@@ -1,5 +1,5 @@
 from ..core.interface import FeiShuInterface, IterableSheetProtocol
-from fastfeishu.utils.common import num_to_excel_col
+from fastfeishu.helpers import num_to_excel_col
 from typing import Optional, Callable, List, Dict, Any, Union
 import pandas as pd
 

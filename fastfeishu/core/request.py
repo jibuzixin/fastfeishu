@@ -8,7 +8,7 @@ from requests import Response
 
 from fastfeishu.configs.settings import get_feishu_property
 from fastfeishu.models.type import Formula, FeiShuCellType
-from fastfeishu.utils.common import base64_image
+from fastfeishu.helpers import base64_image
 from fastfeishu.exceptions.exception import FeiShuException
 from fastfeishu.models.feishu_var import FeishuVariable
 from datetime import datetime

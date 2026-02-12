@@ -9,7 +9,7 @@ from PIL import Image
 
 from fastfeishu.core import FeiShuRequest
 from fastfeishu.exceptions.exception import FeiShuException, FeiShuRequestException
-from fastfeishu.utils.common import match_row_num_by_range, base64_image, num_to_excel_col, excel_col_to_num
+from fastfeishu.helpers import match_row_num_by_range, base64_image, num_to_excel_col, excel_col_to_num
 
 
 def _response_json(response: requests.Response) -> Dict[str, Any]:

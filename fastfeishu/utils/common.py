@@ -4,27 +4,23 @@ import time
 import os
 from typing import List, Optional, Tuple, Literal, Dict, Any, Union
 import logging
-import re, random
-import base64, json
+import random
+import json
+
+# 导入纯工具函数（避免循环依赖）
+from fastfeishu.helpers import (
+    match_row_num_by_range,
+    match_col_letter_by_range,
+    num_to_excel_col,
+    excel_col_to_num,
+    base64_image,
+    extract_json_content
+)
 
 # 配置日志（可选，也可以外部传入 logger）
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-import random
-
-def match_row_num_by_range(s: str) -> Tuple[str, str]:
-    """例如 Ac12:B3 匹配到数字: '12', '3'"""
-    pattern = r'(?<=[a-zA-Z])(\d+)'
-    matches = re.findall(pattern, s)
-    return matches[0], matches[1]
-
-def match_col_letter_by_range(s: str) -> Tuple[str, str]:
-    """例如 Ac12:B3 匹配到列索引: 'AC', 'B'"""
-    pattern = r'([a-zA-Z]+)\d+:([a-zA-Z]+)\d'
-    matches = re.findall(pattern, s)
-    for match in matches:
-        return str(match[0]).upper(), str(match[1]).upper()
 
 def sample_from_array(labels_array, label_config=None, max_samples=None):
     """
@@ -92,41 +88,6 @@ def sample_from_array(labels_array, label_config=None, max_samples=None):
     
     return result
 
-def base64_image(path_or_bytes: Union[str, bytes]) -> str:
-    """统一转 base64 字符串"""
-    if isinstance(path_or_bytes, str):
-        with open(path_or_bytes, 'rb') as f:
-            data = f.read()
-    else:
-        data = path_or_bytes
-    return base64.b64encode(data).decode('ascii')
-
-def num_to_excel_col(n: int) -> str:
-    """
-    将 1-based 列号转成 Excel 列字母
-    例如 1 -> 'A', 26 -> 'Z', 27 -> 'AA', 702 -> 'ZZ', 703 -> 'AAA'
-    """
-    if n <= 0:
-        raise ValueError("列号必须 ≥ 1")
-    chars = []
-    while n > 0:
-        n -= 1                 # 关键：先减 1，让 0->A, 25->Z
-        chars.append(chr(ord('A') + n % 26))
-        n //= 26
-    return ''.join(reversed(chars))
-
-
-def excel_col_to_num(col: str) -> int:
-    """
-    将 Excel 列字母转成 1-based 列号
-    例如 'A' -> 1, 'Z' -> 26, 'AA' -> 27, 'ZZ' -> 702, 'AAA' -> 703
-    """
-    if not col.isalpha():
-        raise ValueError("列名必须是英文字母")
-    num = 0
-    for char in col.upper():  # 将输入统一转换为大写
-        num = num * 26 + (ord(char) - ord('A') + 1)
-    return num
 
 def get_real_extension_from_bytes(data: bytes) -> str:
     """
@@ -279,39 +240,25 @@ async def batch_download_images(
 def sync_batch_download_images(*args, **kwargs):
     """
     批量下载图片函数-同步
-    
+
     Args:
         urls: 图片URL列表
         qps: 每秒请求数限制（最大并发数）
         save_dir: 保存目录，为None时不保存到本地
-        return_type: 
+        return_type:
             "success"  -> 只返回成功/失败状态
             "binary"   -> 只返回二进制内容（适合直接上传云端）
             "both"     -> 返回状态 + 二进制（推荐）
         failed_log_path: 失败日志保存路径（json格式）
         filename_template: 文件命名模板，支持 {index}, {timestamp}, {name}
         headers: 自定义请求头（如需要referer、user-agent等）
-    
+
     Returns:
         success_list: 成功下载的列表
         failed_list: 失败的列表（会自动写入 failed_log_path）
     """
     return asyncio.run(batch_download_images(*args, **kwargs))
 
-def extract_json_content(input_string, start_flag: str='<json>', end_flag: str='</json>'):
-    """
-    Parses a string wrapped in <json></json> tags and extracts the content inside.
-    
-    Args:
-    input_string (str): The input string containing the <json> tags.
-    
-    Returns:
-    str or None: The extracted content if tags are found, otherwise None.
-    """
-    match = re.search(f'{start_flag}(.*?){end_flag}', input_string, re.DOTALL)
-    if match:
-        return match.group(1).strip()
-    return None
 
 def example_json():
     example = "```json\n{\"key\": \"value\"}\n```"
