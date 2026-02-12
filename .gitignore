@@ -14,7 +14,10 @@ venv/
 .vscode
 
 # 忽略测试文件
+.pytest_cache/
 .coverage
+.coverage.*
+coverage.xml
 htmlcov/
 
 tmp*/

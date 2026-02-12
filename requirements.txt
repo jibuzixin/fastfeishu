@@ -10,10 +10,3 @@ python-dotenv==1.2.1
 PyYAML==6.0.3
 Requests==2.32.5
 yarl==1.22.0
-ois3-sdk-python
-
-# 测试依赖
-pytest>=7.4.0
-pytest-cov>=4.1.0
-pytest-mock>=3.11.1
-responses>=0.23.1
