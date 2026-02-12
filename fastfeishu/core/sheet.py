@@ -2,10 +2,9 @@ import pandas as pd
 
 from fastfeishu.core.operations import FeiShuSheetOperations
 from typing import Union, Any, Optional, List, Generator, Dict, Literal, Type, Tuple, Callable
-from fastfeishu.utils import num_to_excel_col
+from fastfeishu.helpers import num_to_excel_col, match_row_num_by_range, match_col_letter_by_range, excel_col_to_num
 from fastfeishu.exceptions.exception import FeiShuColumnNotExist, FeiShuException
 from fastfeishu.core.interface import FeiShuInterface
-from fastfeishu.utils.common import match_row_num_by_range, match_col_letter_by_range, excel_col_to_num
 from fastfeishu.utils.partition_grid import partition_grid
 
 
@@ -499,10 +498,7 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
     def _cell_value_type_judge(self, cell: Union[Dict, List, str, bool]) -> str:
         new_value = []
         if isinstance(cell, dict):
-            if cell['type'] == 'url':
-                return cell["link"]
-            else:
-                return cell['text']
+            return cell['text']
         elif isinstance(cell, list):
             for item in cell:
                 new_value.append(self._cell_value_type_judge(item))
@@ -522,13 +518,15 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         data = self.read(sheet_range, value_render_option="Formula", date_time_render_option='')
         return data
 
-    def read_column(self, column_name: str) -> List[Any]:
+    def read_column(self, column_name: str, read_method: Callable[str, List[List[Any]]] = None) -> List[Any]:
         """
         根据列名读取对应列的所有数据，返回一维数组。
         """
+        if read_method is None:
+            read_method = self.read_human
         col_index = self.get_index_by_col_name(column_name)
         col_letter = num_to_excel_col(col_index)
-        data = self.read_human(f'{col_letter}2:{col_letter}{self.get_sheet_info()["rowCount"]}')
+        data = read_method(f'{col_letter}2:{col_letter}{self.get_sheet_info()["rowCount"]}')
         return [row[0] for row in data]
     
     def get_title(self) -> str:

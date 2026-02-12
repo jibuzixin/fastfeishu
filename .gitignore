@@ -13,4 +13,8 @@ venv/
 
 .vscode
 
+# 忽略测试文件
+.coverage
+htmlcov/
+
 tmp*/

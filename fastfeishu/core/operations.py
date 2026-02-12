@@ -2,14 +2,14 @@ import requests
 
 from io import BytesIO
 from typing import Any, Dict, List, Literal, Union, Self
-from fastfeishu.models import SheetProperties
+from fastfeishu.models import SheetProperties, CellStyle
 from yarl import URL
 from pathlib import Path
 from PIL import Image
 
 from fastfeishu.core import FeiShuRequest
 from fastfeishu.exceptions.exception import FeiShuException, FeiShuRequestException
-from fastfeishu.utils.common import match_row_num_by_range, base64_image, num_to_excel_col, excel_col_to_num
+from fastfeishu.helpers import match_row_num_by_range, base64_image, num_to_excel_col, excel_col_to_num
 
 
 def _response_json(response: requests.Response) -> Dict[str, Any]:
@@ -220,9 +220,85 @@ class FeiShuSheetOperations:
         _response_json(response)
 
     # -------------------------------------- 设置样式 --------------------------------------------
-    def set_style(self, sheet_range: str, style: dict[str, Any]):
-        """[设置单元格样式](https://open.feishu.cn/document/server-docs/docs/sheets-v3/data-operation/set-cell-style)"""
+    def set_style(self, sheet_range: str, style: Union[CellStyle, Dict[str, Any]]):
+        """
+        设置单元格样式，支持字体、对齐、边框、颜色等多种样式配置
+
+        [飞书 API 文档](https://open.feishu.cn/document/server-docs/docs/sheets-v3/data-operation/set-cell-style)
+
+        Args:
+            sheet_range: 单元格范围，如 'A3:C4'
+            style: CellStyle 对象或样式字典，支持以下属性：
+                - font (dict): 字体相关样式
+                    - bold (bool): 是否加粗，默认 false
+                    - italic (bool): 是否斜体，默认 false
+                    - fontSize (str): 字体大小，如 "10pt/1.5"。10pt 表示字号（取值范围 [9,36]pt），1.5 为行距（固定 1.5px）
+                    - clean (bool): 是否清除字体格式，默认 false
+                - textDecoration (int): 文本装饰样式
+                    - 0: 默认样式，不加下划线和删除线
+                    - 1: 下划线
+                    - 2: 删除线
+                    - 3: 下划线和删除线
+                - formatter (str): 数字格式，支持的格式类型：
+                    - "@": 纯文本 (text)
+                    - "0": 数字 (1024)
+                    - "#,##0": 数字(千分位) (1,024)
+                    - "#,##0.00": 数字(千分位 小数点) (1,024.56)
+                    - "0%": 百分比 (10%)
+                    - "0.00%": 百分比(小数点) (10.24%)
+                    - "0.00E+00": 科学计数 (1.02E+03)
+                    - "¥#,##0": 人民币 (¥1,024)
+                    - "¥#,##0.00": 人民币(小数点) (¥1,024.56)
+                    - "$#,##0": 美元 ($1,024)
+                    - "$#,##0.00": 美元(小数点) ($1,024.56)
+                    - "yyyy/MM/dd": 日期 (2017/08/10)
+                    - "yyyy-MM-dd": 日期 (2017-08-10)
+                    - "HH:mm:ss": 时间 (23:24:25)
+                    - "yyyy/MM/dd HH:mm:ss": 日期时间 (2017/08/10 23:24:25)
+                - hAlign (int): 水平对齐方式
+                    - 0: 左对齐
+                    - 1: 中对齐
+                    - 2: 右对齐
+                - vAlign (int): 垂直对齐方式
+                    - 0: 上对齐
+                    - 1: 中对齐
+                    - 2: 下对齐
+                - foreColor (str): 字体颜色，十六进制颜色代码，如 "#000000"
+                - backColor (str): 背景颜色，十六进制颜色代码，如 "#ffffff"
+                - borderType (str): 边框类型
+                    - FULL_BORDER: 全边框，即四周都有边框
+                    - OUTER_BORDER: 外边框，只有外侧有边框
+                    - INNER_BORDER: 内边框，只有内部有边框
+                    - NO_BORDER: 无边框
+                    - LEFT_BORDER: 左边框
+                    - RIGHT_BORDER: 右边框
+                    - TOP_BORDER: 上边框
+                    - BOTTOM_BORDER: 下边框
+                - borderColor (str): 边框颜色，十六进制颜色代码，如 "#ff0000"
+                - clean (bool): 是否清除所有格式，默认 false
+
+        Examples:
+            >>> # 使用 Builder 模式创建样式
+            >>> style = CellStyle.builder() \\
+            ...     .font(Font.builder().bold().font_size("12pt/1.5").build()) \\
+            ...     .fore_color("#000000") \\
+            ...     .back_color("#ffff00") \\
+            ...     .h_align(1) \\
+            ...     .border_type("FULL_BORDER") \\
+            ...     .build()
+            >>> sheet.set_style("A1:C3", style)
+
+            >>> # 使用字典直接设置
+            >>> sheet.set_style("A1:C3", {
+            ...     "font": {"bold": True, "fontSize": "14pt/1.5"},
+            ...     "hAlign": 1,
+            ...     "foreColor": "#000000"
+            ... })
+        """
         self._deny_if_readonly()
+        # 如果是 CellStyle 对象，转为字典
+        if isinstance(style, CellStyle):
+            style = style.to_dict()
         response = self._request.set_style(sheet_range, style)
         _response_json(response)
 
