@@ -1,0 +1,29 @@
+# Pre-commit hooks 配置
+# 详见: https://pre-commit.com
+
+repos:
+  # Python 代码格式化和质量检查
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      # 基础检查
+      - id: trailing-whitespace        # 删除行尾空格
+      - id: end-of-file-fixer          # 确保文件以换行符结尾
+      - id: check-yaml                 # 检查 YAML 语法
+      - id: check-added-large-files    # 防止提交大文件
+        args: ['--maxkb=500']
+      - id: check-merge-conflict       # 检查合并冲突标记
+      - id: mixed-line-ending          # 检查混合行结束符
+
+  # 在 push 前运行单元测试
+  - repo: local
+    hooks:
+      - id: pytest-unit
+        name: 运行单元测试
+        entry: pytest
+        language: system
+        args: ['tests/unit', '-v', '-m', 'unit', '--tb=short']
+        pass_filenames: false
+        stages: [pre-push]  # 只在 push 时运行
+        always_run: true
+        verbose: true
