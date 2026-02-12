@@ -6,7 +6,7 @@ with open('requirements.txt', 'r') as f:
 
 setup(
     name='fastfeishu',
-    version='1.0.0',
+    version='1.3.2',
     author='yuzhuoyang',
     author_email='this.jibuzixin@gmail.com',
     description='飞书文档快速操作API',

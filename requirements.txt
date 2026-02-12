@@ -1,6 +1,5 @@
 aiohttp==3.13.2
 edge_tts==7.2.7
-ois3_sdk_python==3.2.30
 pandas>=1.5.3  # 使用兼容版本而不是固定版本
 numpy>=1.23.5
 Pillow==12.1.0
@@ -10,10 +9,3 @@ python-dotenv==1.2.1
 PyYAML==6.0.3
 Requests==2.32.5
 yarl==1.22.0
-ois3-sdk-python
-
-# 测试依赖
-pytest>=7.4.0
-pytest-cov>=4.1.0
-pytest-mock>=3.11.1
-responses>=0.23.1
