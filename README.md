@@ -828,9 +828,126 @@ def test_num_to_excel_col(input, expected):
 
 详细的测试指南请参考 [tests/README.md](tests/README.md)
 
-## 八、开发规范
+## 八、开发者工具
 
-### 8.1 Git 提交规范
+### 8.1 Pre-commit Hooks（推送前自动测试）
+
+本项目使用 **pre-commit** 框架在推送代码前自动运行单元测试，确保推送的代码都通过了测试。
+
+#### 首次配置（仅需一次）
+
+```bash
+# 1. 安装 pre-commit
+pip install pre-commit
+
+# 2. 安装 Git hooks（在项目根目录执行）
+pre-commit install          # 安装 pre-commit hook（提交时检查）
+pre-commit install --hook-type pre-push  # 安装 pre-push hook（推送时测试）
+```
+
+#### 工作原理
+
+配置完成后，每次执行 `git push` 时会：
+
+1. **自动运行单元测试** 🧪
+   - 执行 `pytest tests/unit -v -m unit`
+   - 只运行标记为 `@pytest.mark.unit` 的测试
+   - 不需要真实的飞书 API 凭证
+
+2. **测试通过** ✅
+   - 继续推送到远程仓库
+   - 确保团队代码质量
+
+3. **测试失败** ❌
+   - 阻止推送
+   - 显示失败的测试详情
+   - 需要修复测试后才能推送
+
+#### 使用示例
+
+```bash
+# 正常推送（会自动运行测试）
+git push origin dev
+
+# 输出示例：
+# 🧪 运行单元测试...
+# ============================= test session starts ==============================
+# tests/unit/test_cell_style.py::TestFont::test_font_builder_bold PASSED
+# ...
+# ============================== 66 passed in 2.45s ===============================
+# ✅ 所有单元测试通过！继续推送...
+```
+
+#### 跳过测试（紧急情况）
+
+如果确实需要跳过测试强制推送（**不推荐**）：
+
+```bash
+git push --no-verify origin dev
+```
+
+⚠️ **警告：** 跳过测试可能导致有问题的代码进入仓库，影响团队其他成员。
+
+#### 手动运行 Pre-commit 检查
+
+```bash
+# 运行所有 pre-commit 检查（提交时的检查）
+pre-commit run --all-files
+
+# 只运行 pre-push 检查（推送时的测试）
+pre-commit run --hook-stage push pytest-unit
+```
+
+#### 更新 Pre-commit Hooks
+
+```bash
+# 更新到最新版本的 hooks
+pre-commit autoupdate
+```
+
+#### 配置文件
+
+Pre-commit 配置在项目根目录的 `.pre-commit-config.yaml` 文件中，包含：
+
+- **基础代码检查**（提交时）：
+  - 删除行尾空格
+  - 确保文件以换行符结尾
+  - 检查 YAML 语法
+  - 防止提交大文件
+  - 检查合并冲突标记
+
+- **单元测试**（推送时）：
+  - 运行所有单元测试
+  - 测试失败则阻止推送
+
+#### 团队协作
+
+✅ **重要：** 每个团队成员克隆项目后都需要执行一次配置：
+
+```bash
+pip install pre-commit
+pre-commit install
+pre-commit install --hook-type pre-push
+```
+
+这样可以确保整个团队的代码质量标准一致。
+
+#### CI/CD 集成
+
+本项目同时配置了 GitHub Actions CI/CD 工作流：
+
+- **本地 Pre-commit**：推送前的第一道防线
+- **GitHub Actions**：推送后的二次验证
+
+两者配合使用，确保代码质量：
+- 本地测试快速反馈（2-3秒）
+- CI 测试多版本验证（Python 3.11, 3.12）
+
+GitHub Actions 状态查看：https://github.com/jibuzixin/fastfeishu/actions
+
+## 九、开发规范
+
+### 9.1 Git 提交规范
 
 本项目遵循约定式提交（Conventional Commits）格式，所有提交信息必须包含类型标签：
 
@@ -898,7 +1015,7 @@ git commit -m "[feat] 你的提交信息"
 git push origin dev
 ```
 
-### 8.2 代码规范
+### 9.2 代码规范
 
 - **PEP 8** - 遵循 Python 官方代码风格指南
 - **类型注解** - 为函数参数和返回值添加类型注解
@@ -909,7 +1026,7 @@ git push origin dev
   - 常量：`UPPER_SNAKE_CASE`
   - 私有属性：`_leading_underscore`
 
-### 8.3 架构原则
+### 9.3 架构原则
 
 本项目严格遵循分层架构，避免循环依赖：
 
@@ -928,4 +1045,3 @@ utils (高级工具，可依赖 core)
 - 低层模块不应导入高层模块
 - 优先使用 `from fastfeishu.helpers import ...` 导入纯工具函数
 - 高级功能使用 `from fastfeishu.utils import ...`
-
