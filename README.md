@@ -35,29 +35,28 @@ FS_APP_SECRET=''       # 飞书应用密钥
 
 ```
 项目根目录
-├── chatgpt             # 大模型接口
-├── fastfeishu          # 飞书在线文档操作接口
+├── chatgpt                         # 大模型接口
+├── fastfeishu                      # 飞书在线文档操作接口
 │   ├── __init__.py
-│   ├── helpers.py      # 纯工具函数（零依赖）
-│   ├── configs/        # 配置管理
-│   ├── core/           # 核心实现
-│   │   ├── interface.py   # 抽象接口
-│   │   ├── operations.py  # 操作层
-│   │   ├── request.py     # API请求层
-│   │   └── sheet.py       # 高层接口
-│   ├── exceptions/     # 异常类
-│   ├── models/         # 数据模型
-│   │   ├── sheet_properties.py   # Sheet属性配置
-│   │   ├── cell_style.py         # 单元格样式
-│   │   └── type.py               # 单元格类型
-│   └── utils/          # 高级工具
-│       ├── common.py       # 批量下载等高级功能
-│       ├── feishu_util.py  # FeiShuUtil 工具类
-│       └── partition_grid.py # 网格分区算法
-├── scripts             # 日常脚本
-├── requirements.txt    # 依赖列表
-├── setup.py            # 项目元数据
-└── README.md           # 说明文档
+│   ├── helpers.py                  # 纯工具函数（零依赖）
+│   ├── configs/                    # 配置管理
+│   ├── core/                       # 核心实现
+│   │   ├── interface.py            # 抽象接口
+│   │   ├── operations.py           # 操作层
+│   │   ├── request.py              # API请求层
+│   │   └── sheet.py                # 高层接口
+│   ├── exceptions/                 # 异常类
+│   ├── models/                     # 数据模型
+│   │   ├── sheet_properties.py     # Sheet属性配置
+│   │   ├── cell_style.py           # 单元格样式
+│   │   └── type.py                 # 单元格类型
+│   └── utils/                      # 高级工具
+│       ├── common.py               # 批量下载等高级功能
+│       ├── feishu_util.py          # FeiShuUtil 工具类
+│       └── partition_grid.py       # 网格分区算法
+├── requirements.txt                # 依赖列表
+├── setup.py                        # 项目元数据
+└── README.md                       # 说明文档
 ```
 
 **架构分层**（从底到高）：
