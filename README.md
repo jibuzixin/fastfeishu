@@ -38,6 +38,7 @@ FS_APP_SECRET=''       # 飞书应用密钥
 ├── chatgpt             # 大模型接口
 ├── fastfeishu          # 飞书在线文档操作接口
 │   ├── __init__.py
+│   ├── helpers.py      # 纯工具函数（零依赖）
 │   ├── configs/        # 配置管理
 │   ├── core/           # 核心实现
 │   │   ├── interface.py   # 抽象接口
@@ -46,15 +47,24 @@ FS_APP_SECRET=''       # 飞书应用密钥
 │   │   └── sheet.py       # 高层接口
 │   ├── exceptions/     # 异常类
 │   ├── models/         # 数据模型
-│   │   ├── feishu_util.py        # 工具类
 │   │   ├── sheet_properties.py   # Sheet属性配置
+│   │   ├── cell_style.py         # 单元格样式
 │   │   └── type.py               # 单元格类型
-│   └── utils/          # 工具函数
+│   └── utils/          # 高级工具
+│       ├── common.py       # 批量下载等高级功能
+│       ├── feishu_util.py  # FeiShuUtil 工具类
+│       └── partition_grid.py # 网格分区算法
 ├── scripts             # 日常脚本
 ├── requirements.txt    # 依赖列表
 ├── setup.py            # 项目元数据
 └── README.md           # 说明文档
 ```
+
+**架构分层**（从底到高）：
+- `helpers.py` - 底层纯函数（无任何依赖）
+- `models/` - 数据模型层
+- `core/` - 核心业务逻辑层
+- `utils/` - 高级工具层（可依赖 core）
 
 ## 二、基础操作
 
@@ -410,12 +420,109 @@ if __name__ == '__main__':
     s.update_sheet_properties(properties)
 ```
 
+#### 设置单元格样式
+
+```python
+from fastfeishu.core import FeiShuSheet
+from fastfeishu.models import CellStyle, Font
+
+if __name__ == '__main__':
+    s = FeiShuSheet('飞书链接')
+
+    # 使用 Builder 模式创建样式（推荐）
+    style = CellStyle.builder() \
+        .font(Font.builder()
+              .bold(True)
+              .italic(False)
+              .font_size("14pt/1.5")
+              .build()) \
+        .text_decoration(1) \
+        .formatter("#,##0.00") \
+        .h_align(1) \
+        .v_align(1) \
+        .fore_color("#000000") \
+        .back_color("#ffff00") \
+        .border_type("FULL_BORDER") \
+        .border_color("#ff0000") \
+        .build()
+
+    # 应用样式到范围
+    s.set_style("A1:C3", style)
+
+    # 或使用字典直接设置
+    s.set_style("A1:C3", {
+        "font": {"bold": True, "fontSize": "14pt/1.5"},
+        "hAlign": 1,
+        "foreColor": "#000000",
+        "backColor": "#ffff00",
+        "borderType": "FULL_BORDER"
+    })
+
+    # 清除样式
+    s.set_style("A1:C3", CellStyle.builder().clean(True).build())
+```
+
+**样式属性说明**：
+
+**字体样式 (font)**:
+- `bold`: 是否加粗（True/False）
+- `italic`: 是否斜体（True/False）
+- `fontSize`: 字体大小，格式如 "10pt/1.5"（字号范围 [9,36]pt，行距固定 1.5px）
+- `clean`: 是否清除字体格式（True/False）
+
+**文本装饰 (textDecoration)**:
+- `0`: 默认样式（无下划线和删除线）
+- `1`: 下划线
+- `2`: 删除线
+- `3`: 下划线和删除线
+
+**数字格式 (formatter)**:
+- `"@"`: 纯文本
+- `"0"`: 数字（1024）
+- `"#,##0"`: 数字千分位（1,024）
+- `"#,##0.00"`: 数字千分位+小数点（1,024.56）
+- `"0%"`: 百分比（10%）
+- `"0.00%"`: 百分比小数点（10.24%）
+- `"0.00E+00"`: 科学计数（1.02E+03）
+- `"¥#,##0"`: 人民币（¥1,024）
+- `"¥#,##0.00"`: 人民币小数点（¥1,024.56）
+- `"$#,##0"`: 美元（$1,024）
+- `"$#,##0.00"`: 美元小数点（$1,024.56）
+- `"yyyy/MM/dd"`: 日期（2017/08/10）
+- `"yyyy-MM-dd"`: 日期（2017-08-10）
+- `"HH:mm:ss"`: 时间（23:24:25）
+- `"yyyy/MM/dd HH:mm:ss"`: 日期时间（2017/08/10 23:24:25）
+
+**对齐方式**:
+- 水平对齐 (hAlign): `0`-左对齐, `1`-中对齐, `2`-右对齐
+- 垂直对齐 (vAlign): `0`-上对齐, `1`-中对齐, `2`-下对齐
+
+**颜色**:
+- `foreColor`: 字体颜色，十六进制格式（如 "#000000"）
+- `backColor`: 背景色，十六进制格式（如 "#ffff00"）
+
+**边框**:
+- `borderType`: 边框类型
+  - `"FULL_BORDER"`: 全边框（四周都有边框）
+  - `"OUTER_BORDER"`: 外边框（只有外侧有边框）
+  - `"INNER_BORDER"`: 内边框（只有内部有边框）
+  - `"NO_BORDER"`: 无边框
+  - `"LEFT_BORDER"`: 左边框
+  - `"RIGHT_BORDER"`: 右边框
+  - `"TOP_BORDER"`: 上边框
+  - `"BOTTOM_BORDER"`: 下边框
+- `borderColor`: 边框颜色，十六进制格式（如 "#ff0000"）
+
+**其他**:
+- `clean`: 是否清除所有格式（True/False，默认 False）
+
 ## 三、批量处理
 
 ### 3.1 FeiShuUtil 工具类
 
 ```python
-from fastfeishu.core import FeiShuSheet, FeiShuUtil
+from fastfeishu.core import FeiShuSheet
+from fastfeishu.utils import FeiShuUtil
 from typing import List, Dict, Any
 import pandas as pd
 
@@ -444,7 +551,8 @@ if __name__ == '__main__':
 ### 3.2 自定义数据源
 
 ```python
-from fastfeishu.core import FeiShuSheet, FeiShuUtil
+from fastfeishu.core import FeiShuSheet
+from fastfeishu.utils import FeiShuUtil
 from typing import Generator
 import pandas as pd
 
@@ -719,4 +827,105 @@ def test_num_to_excel_col(input, expected):
 ### 7.7 更多信息
 
 详细的测试指南请参考 [tests/README.md](tests/README.md)
+
+## 八、开发规范
+
+### 8.1 Git 提交规范
+
+本项目遵循约定式提交（Conventional Commits）格式，所有提交信息必须包含类型标签：
+
+#### 提交格式
+
+```
+[类型] 简短描述
+
+详细描述（可选）
+```
+
+#### 提交类型
+
+| 类型 | 说明 | 示例 |
+|------|------|------|
+| `[feat]` | 新功能 | `[feat] 增加 CellStyle 单元格样式` |
+| `[fix]` | Bug修复 | `[fix] 修复写图片 bug，为 iterrows 方法增加读取方法引用` |
+| `[perf]` | 性能优化 | `[perf] 优化 write_row 方法和 request.py 内部请求方法代码结构` |
+| `[refactor]` | 代码重构 | `[refactor] 提取 helpers 模块消除循环依赖隐患` |
+| `[docs]` | 文档更新 | `[docs] 更新 README.md 文档` |
+| `[test]` | 测试相关 | `[test] 增加单元测试覆盖率` |
+| `[chore]` | 构建/工具 | `[chore] 更新依赖版本` |
+| `[style]` | 代码格式 | `[style] 统一代码缩进格式` |
+
+#### 提交示例
+
+```bash
+# 新功能
+git commit -m "[feat] 增加批量下载图片功能"
+
+# Bug修复
+git commit -m "[fix] 修复列名映射在特殊字符下的异常"
+
+# 性能优化
+git commit -m "[perf] 优化 write_row 使用网格分区减少API调用"
+
+# 文档更新
+git commit -m "[docs] 更新 API 使用示例"
+```
+
+#### 提交最佳实践
+
+1. **单一职责** - 一次提交只做一件事
+2. **描述清晰** - 简短描述变更内容，避免模糊词汇
+3. **原子提交** - 确保每次提交代码都可运行
+4. **及时提交** - 完成功能后立即提交，避免积累过多变更
+
+#### 提交前检查
+
+```bash
+# 1. 查看变更文件
+git status
+
+# 2. 查看具体变更内容
+git diff
+
+# 3. 运行测试确保通过
+pytest
+
+# 4. 添加文件并提交
+git add <files>
+git commit -m "[feat] 你的提交信息"
+
+# 5. 推送到远程
+git push origin dev
+```
+
+### 8.2 代码规范
+
+- **PEP 8** - 遵循 Python 官方代码风格指南
+- **类型注解** - 为函数参数和返回值添加类型注解
+- **文档字符串** - 为公共API编写清晰的docstring
+- **命名规范**:
+  - 类名：`PascalCase`
+  - 函数/变量：`snake_case`
+  - 常量：`UPPER_SNAKE_CASE`
+  - 私有属性：`_leading_underscore`
+
+### 8.3 架构原则
+
+本项目严格遵循分层架构，避免循环依赖：
+
+```
+helpers (纯工具函数，零依赖)
+   ↓
+models (数据模型)
+   ↓
+core (核心业务逻辑)
+   ↓
+utils (高级工具，可依赖 core)
+```
+
+**重要规则**：
+- `helpers.py` 永远不应导入项目内其他模块
+- 低层模块不应导入高层模块
+- 优先使用 `from fastfeishu.helpers import ...` 导入纯工具函数
+- 高级功能使用 `from fastfeishu.utils import ...`
 
