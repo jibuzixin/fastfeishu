@@ -2,7 +2,7 @@
 
 [![Python Version](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Test Coverage](https://img.shields.io/badge/coverage-48%25-yellow)](tests/)
+[![Test Coverage](https://img.shields.io/badge/coverage-57%25-yellow)](docs/TESTING.md)
 
 **fastfeishu** 是一个用于与飞书（Lark）Sheets API v3 交互的 Python 包，提供高级接口用于读取、写入和管理电子表格，支持批处理、图片处理和流式读取。
 
@@ -10,7 +10,8 @@
 
 - **[开发者贡献指南](docs/CONTRIBUTING.md)** - 新人必读！一键配置开发环境，了解开发工作流和代码规范
 - **[项目架构指南](docs/CLAUDE.md)** - 详细的架构设计、设计模式和开发模式
-- **[测试指南](tests/README.md)** - 如何编写和运行测试
+- **[测试指南](docs/TESTING.md)** - 单元测试编写指南和最佳实践
+- **[集成测试指南](docs/INTEGRATION_TESTS.md)** - 集成测试编写指南和示例
 - **[GitHub Actions](../../actions)** - 查看 CI/CD 状态
 
 ## 🚀 新人快速开始
