@@ -1,24 +1,77 @@
 # 飞书 API 快速操作
 
+[![Python Version](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Test Coverage](https://img.shields.io/badge/coverage-48%25-yellow)](tests/)
+
+**fastfeishu** 是一个用于与飞书（Lark）Sheets API v3 交互的 Python 包，提供高级接口用于读取、写入和管理电子表格，支持批处理、图片处理和流式读取。
+
+## 📚 文档导航
+
+- **[开发者贡献指南](docs/CONTRIBUTING.md)** - 新人必读！一键配置开发环境，了解开发工作流和代码规范
+- **[项目架构指南](docs/CLAUDE.md)** - 详细的架构设计、设计模式和开发模式
+- **[测试指南](tests/README.md)** - 如何编写和运行测试
+- **[GitHub Actions](../../actions)** - 查看 CI/CD 状态
+
+## 🚀 新人快速开始
+
+如果你是第一次参与本项目开发，强烈建议使用一键安装脚本：
+
+```bash
+# 1. 克隆项目并创建虚拟环境
+git clone <repo_url>
+cd fastfeishu
+conda create -n feishu python=3.11 -y
+conda activate feishu
+
+# 2. 运行一键安装脚本（自动完成所有配置）
+./setup_dev.sh
+```
+
+脚本会自动完成：
+- ✅ 检查 Python 环境
+- ✅ 安装项目依赖和测试工具
+- ✅ 配置 Git hooks（自动检查格式和运行测试）
+- ✅ 单元测试不通过时自动阻止推送
+
+完成后你只需关注：**写代码 → git commit → git push**
+
+**详细说明请参考：[开发者贡献指南](docs/CONTRIBUTING.md)**
+
+---
+
 ## 一、快速上手
 
 ### 1. 安装
 
-**使用 Python 3.11 版本**（3.12 可能存在依赖冲突）
+#### 开发者安装（推荐）
+
+如果你想参与开发或修改代码，使用一键安装脚本：
 
 ```bash
-# 创建虚拟环境
+# 创建并激活虚拟环境
 conda create -n feishu python=3.11 -y
-
-# 激活环境
 conda activate feishu
 
-# 以源码安装
+# 进入项目目录并运行安装脚本
+cd fastfeishu
+./setup_dev.sh
+```
+
+**这会自动配置 Git hooks，确保代码质量！** 详细说明请参考 **[开发者贡献指南](docs/CONTRIBUTING.md)**。
+
+#### 用户安装（仅使用）
+
+如果你只是使用这个库，不需要修改代码：
+
+```bash
+# 创建并激活虚拟环境
+conda create -n feishu python=3.11 -y
+conda activate feishu
+
+# 安装项目
 cd fastfeishu
 pip install -e .
-
-# 如果使用内部 PyPI 源，添加 --index-url 参数
-# pip install -e . --index-url YOUR_INTERNAL_PYPI_URL
 ```
 
 ### 2. 环境变量配置
@@ -827,220 +880,81 @@ def test_num_to_excel_col(input, expected):
 
 详细的测试指南请参考 [tests/README.md](tests/README.md)
 
-## 八、开发者工具
+## 八、开发者指南
 
-### 8.1 Pre-commit Hooks（推送前自动测试）
+如果你想参与项目开发，请查看以下文档：
 
-本项目使用 **pre-commit** 框架在推送代码前自动运行单元测试，确保推送的代码都通过了测试。
+### 📖 必读文档
 
-#### 首次配置（仅需一次）
+- **[开发者贡献指南](docs/CONTRIBUTING.md)** - 开发工作流、测试流程、代码规范
+- **[项目架构指南](docs/CLAUDE.md)** - 架构设计、设计模式、模块说明
 
-```bash
-# 1. 安装 pre-commit
-pip install pre-commit
+### 🛠️ 快速参考
 
-# 2. 安装 Git hooks（在项目根目录执行）
-pre-commit install          # 安装 pre-commit hook（提交时检查）
-pre-commit install --hook-type pre-push  # 安装 pre-push hook（推送时测试）
-```
+#### Git 提交规范
 
-#### 工作原理
-
-配置完成后，每次执行 `git push` 时会：
-
-1. **自动运行单元测试** 🧪
-   - 执行 `pytest tests/unit -v -m unit`
-   - 只运行标记为 `@pytest.mark.unit` 的测试
-   - 不需要真实的飞书 API 凭证
-
-2. **测试通过** ✅
-   - 继续推送到远程仓库
-   - 确保团队代码质量
-
-3. **测试失败** ❌
-   - 阻止推送
-   - 显示失败的测试详情
-   - 需要修复测试后才能推送
-
-#### 使用示例
+所有提交信息必须遵循约定式提交格式：
 
 ```bash
-# 正常推送（会自动运行测试）
-git push origin dev
-
-# 输出示例：
-# 🧪 运行单元测试...
-# ============================= test session starts ==============================
-# tests/unit/test_cell_style.py::TestFont::test_font_builder_bold PASSED
-# ...
-# ============================== 66 passed in 2.45s ===============================
-# ✅ 所有单元测试通过！继续推送...
+git commit -m "[feat] 新功能描述"
+git commit -m "[fix] Bug修复描述"
+git commit -m "[docs] 文档更新"
 ```
 
-#### 跳过测试（紧急情况）
+**提交类型**: `[feat]` `[fix]` `[perf]` `[refactor]` `[docs]` `[test]` `[chore]` `[style]`
 
-如果确实需要跳过测试强制推送（**不推荐**）：
+详细说明请参考 **[开发者贡献指南](docs/CONTRIBUTING.md)**。
+
+#### 自动化测试
+
+本项目配置了 pre-push hook，执行 `git push` 时会自动运行单元测试：
+
+- ✅ 测试通过 → 推送成功
+- ❌ 测试失败 → 推送被阻止
 
 ```bash
-git push --no-verify origin dev
+# 手动运行测试
+pytest tests/unit -v -m unit
+
+# 查看测试覆盖率
+pytest tests/unit -v -m unit --cov=fastfeishu --cov-report=term-missing
 ```
 
-⚠️ **警告：** 跳过测试可能导致有问题的代码进入仓库，影响团队其他成员。
+#### CI/CD
 
-#### 手动运行 Pre-commit 检查
+本项目使用 GitHub Actions 进行持续集成：
 
-```bash
-# 运行所有 pre-commit 检查（提交时的检查）
-pre-commit run --all-files
+- **触发时机**: Pull Request 到 main/dev 分支
+- **测试环境**: Python 3.11 和 3.12
+- **状态查看**: [GitHub Actions](../../actions)
 
-# 只运行 pre-push 检查（推送时的测试）
-pre-commit run --hook-stage push pytest-unit
-```
+### 🏗️ 架构原则
 
-#### 更新 Pre-commit Hooks
-
-```bash
-# 更新到最新版本的 hooks
-pre-commit autoupdate
-```
-
-#### 配置文件
-
-Pre-commit 配置在项目根目录的 `.pre-commit-config.yaml` 文件中，包含：
-
-- **基础代码检查**（提交时）：
-  - 删除行尾空格
-  - 确保文件以换行符结尾
-  - 检查 YAML 语法
-  - 防止提交大文件
-  - 检查合并冲突标记
-
-- **单元测试**（推送时）：
-  - 运行所有单元测试
-  - 测试失败则阻止推送
-
-#### 团队协作
-
-✅ **重要：** 每个团队成员克隆项目后都需要执行一次配置：
-
-```bash
-pip install pre-commit
-pre-commit install
-pre-commit install --hook-type pre-push
-```
-
-这样可以确保整个团队的代码质量标准一致。
-
-#### CI/CD 集成
-
-本项目同时配置了 GitHub Actions CI/CD 工作流：
-
-- **本地 Pre-commit**：推送前的第一道防线
-- **GitHub Actions**：推送后的二次验证
-
-两者配合使用，确保代码质量：
-- 本地测试快速反馈（2-3秒）
-- CI 测试多版本验证（Python 3.11, 3.12）
-
-GitHub Actions 状态查看：https://github.com/jibuzixin/fastfeishu/actions
-
-## 九、开发规范
-
-### 9.1 Git 提交规范
-
-本项目遵循约定式提交（Conventional Commits）格式，所有提交信息必须包含类型标签：
-
-#### 提交格式
+本项目遵循严格的分层架构（从底到高）：
 
 ```
-[类型] 简短描述
-
-详细描述（可选）
-```
-
-#### 提交类型
-
-| 类型 | 说明 | 示例 |
-|------|------|------|
-| `[feat]` | 新功能 | `[feat] 增加 CellStyle 单元格样式` |
-| `[fix]` | Bug修复 | `[fix] 修复写图片 bug，为 iterrows 方法增加读取方法引用` |
-| `[perf]` | 性能优化 | `[perf] 优化 write_row 方法和 request.py 内部请求方法代码结构` |
-| `[refactor]` | 代码重构 | `[refactor] 提取 helpers 模块消除循环依赖隐患` |
-| `[docs]` | 文档更新 | `[docs] 更新 README.md 文档` |
-| `[test]` | 测试相关 | `[test] 增加单元测试覆盖率` |
-| `[chore]` | 构建/工具 | `[chore] 更新依赖版本` |
-| `[style]` | 代码格式 | `[style] 统一代码缩进格式` |
-
-#### 提交示例
-
-```bash
-# 新功能
-git commit -m "[feat] 增加批量下载图片功能"
-
-# Bug修复
-git commit -m "[fix] 修复列名映射在特殊字符下的异常"
-
-# 性能优化
-git commit -m "[perf] 优化 write_row 使用网格分区减少API调用"
-
-# 文档更新
-git commit -m "[docs] 更新 API 使用示例"
-```
-
-#### 提交最佳实践
-
-1. **单一职责** - 一次提交只做一件事
-2. **描述清晰** - 简短描述变更内容，避免模糊词汇
-3. **原子提交** - 确保每次提交代码都可运行
-4. **及时提交** - 完成功能后立即提交，避免积累过多变更
-
-#### 提交前检查
-
-```bash
-# 1. 查看变更文件
-git status
-
-# 2. 查看具体变更内容
-git diff
-
-# 3. 运行测试确保通过
-pytest
-
-# 4. 添加文件并提交
-git add <files>
-git commit -m "[feat] 你的提交信息"
-
-# 5. 推送到远程
-git push origin dev
-```
-
-### 9.2 代码规范
-
-- **PEP 8** - 遵循 Python 官方代码风格指南
-- **类型注解** - 为函数参数和返回值添加类型注解
-- **文档字符串** - 为公共API编写清晰的docstring
-- **命名规范**:
-  - 类名：`PascalCase`
-  - 函数/变量：`snake_case`
-  - 常量：`UPPER_SNAKE_CASE`
-  - 私有属性：`_leading_underscore`
-
-### 9.3 架构原则
-
-本项目严格遵循分层架构，避免循环依赖：
-
-```
-helpers (纯工具函数，零依赖)
+helpers.py (纯工具函数，零依赖)
    ↓
-models (数据模型)
+models/ (数据模型层)
    ↓
-core (核心业务逻辑)
+core/ (核心业务逻辑层)
    ↓
-utils (高级工具，可依赖 core)
+utils/ (高级工具层)
 ```
 
 **重要规则**：
 - `helpers.py` 永远不应导入项目内其他模块
 - 低层模块不应导入高层模块
-- 优先使用 `from fastfeishu.helpers import ...` 导入纯工具函数
-- 高级功能使用 `from fastfeishu.utils import ...`
+- 避免循环依赖
+
+详细说明请参考 **[项目架构指南](docs/CLAUDE.md)**。
+
+---
+
+## 九、许可证
+
+本项目采用 MIT 许可证。详见 [LICENSE](LICENSE) 文件。
+
+## 十、贡献
+
+欢迎贡献！请先阅读 **[开发者贡献指南](docs/CONTRIBUTING.md)** 了解如何参与项目开发。
