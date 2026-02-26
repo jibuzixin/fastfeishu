@@ -7,7 +7,16 @@
 
 import re
 import base64
-from typing import Tuple, Union
+import pandas as pd
+from typing import Tuple, Union, Any
+
+
+def cell_is_blank(cell_data: Any) -> bool:
+    """判断单元格是否为空、None、nan"""
+    if pd.isna(cell_data) or cell_data == '' or cell_data is None:
+        return True
+    else:
+        return False
 
 
 def match_row_num_by_range(s: str) -> Tuple[str, str]:

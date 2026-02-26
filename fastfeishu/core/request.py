@@ -59,14 +59,14 @@ class FeiShuRequest:
         if sheet_id is None:
             sheet_id: str = self.get_sheet_metadata()["data"]["sheets"][0]["sheetId"]
         self.sheet_id = sheet_id
-        
+
     def _get_request_headers(self) -> dict:
         """返回请求头"""
         return {
             "content-type": "application/json; charset=utf-8",
             "Authorization": "Bearer " + str(self.tat),
         }
-    
+
     def _build_url(self, link_cfg: str):
         u = '/'.join([self.base_url, link_cfg,]).replace('//', '/')
         return u.replace(':/', '://')
@@ -130,6 +130,72 @@ class FeiShuRequest:
         response.raise_for_status()
         return response
 
+    def read_batch(
+            self,
+            ranges: List[str],
+            value_render_option: str = "ToString",
+            date_time_render_option: str = "FormattedString"
+    ) -> requests.Response:
+        """
+        [读取多个范围](https://open.feishu.cn/document/server-docs/docs/sheets-v3/data-operation/reading-multiple-ranges)
+
+        批量读取电子表格中多个指定范围的数据。该接口返回数据的最大限制为 10 MB。
+
+        Args:
+            ranges: 多个查询范围的列表，每个元素为形如 'A2:B6' 的范围字符串
+                    例如: ['A2:B6', 'D1:E10']
+            value_render_option: 指定单元格数据的格式。可选值:
+                - ToString：返回纯文本的值（数值类型除外）
+                - Formula：单元格中含有公式时，返回公式本身
+                - FormattedValue：计算并格式化单元格
+                - UnformattedValue：计算但不对单元格进行格式化
+            date_time_render_option: 指定日期、时间类型的格式
+                - FormattedString：格式化为字符串
+                - 默认：返回浮点数（自1899年12月30日以来的天数）
+
+        Returns:
+            Response 对象，其 json() 返回的数据结构:
+            {
+                "code": 0,
+                "data": {
+                    "revision": 87,
+                    "spreadsheetToken": "shtcn...",
+                    "totalCells": 6,
+                    "valueRanges": [
+                        {
+                            "majorDimension": "ROWS",
+                            "range": "sheetId!A2:B3",
+                            "revision": 87,
+                            "values": [[1, 2], [3, 4]]
+                        },
+                        ...
+                    ]
+                }
+            }
+
+        Example:
+            >>> response = request.read_batch(['A2:B3', 'D5:E6'])
+            >>> data = response.json()
+            >>> for value_range in data['data']['valueRanges']:
+            >>>     print(value_range['range'], value_range['values'])
+        """
+        # 构造范围字符串：每个范围前加上 sheet_id
+        range_params = ','.join([f"{self.sheet_id}!{r.upper()}" for r in ranges])
+
+        url = self._build_url(
+            self.link_sheets.readBatch
+            .format(SHEET_TOKEN=self.sheet_token)
+            .with_query(
+                ranges=range_params,
+                valueRenderOption=value_render_option,
+                dateTimeRenderOption=date_time_render_option
+            )
+            .human_repr(),
+        )
+        response = requests.get(url, headers=self._get_request_headers())
+        response.raise_for_status()
+        return response
+
     def read_images(self, sheet_range: str) -> requests.Response:
         """
         [读取单个范围](https://open.feishu.cn/document/server-docs/docs/sheets-v3/data-operation/reading-a-single-range) \n
@@ -164,7 +230,7 @@ class FeiShuRequest:
 
         在电子表格工作表的指定范围的起始位置上方增加若干行，并在该范围中填充数据。
         """
-        
+
         url = self._build_url(
             self.link_sheets.insert.format(SHEET_TOKEN=self.sheet_token).human_repr(),
         )
@@ -294,7 +360,7 @@ class FeiShuRequest:
 
             - INSERT_ROWS ：插入足够数量的行后再进行数据追加
         """
-        
+
         url = self._build_url(
             self.link_sheets.append.format(SHEET_TOKEN=self.sheet_token)
             .with_query(insertDataOption=insert_data_option)
@@ -317,7 +383,7 @@ class FeiShuRequest:
     #     :param title: 说明
     #     :param folder_token: 说明
     #     """
-        
+
     #     url = "https://open.feishu.cn/open-apis/sheets/v3/spreadsheets"
     #     body = {"title": title, "folder_token": folder_token}
     #     response = requests.post(url, headers=self._get_request_headers(), data=json.dumps(body))
@@ -331,7 +397,7 @@ class FeiShuRequest:
         :param title: 新 sheet 的名称
         :param index: 新 sheet 在表中的索引位置，默认为 0 第一个
         """
-        
+
         url = self._build_url(
             self.link_sheets.sheetsBatchUpdate.format(SHEET_TOKEN=self.sheet_token).human_repr(),
         )
@@ -408,7 +474,7 @@ class FeiShuRequest:
             - ROWS：行
             - COLUMNS：列
         """
-        
+
         url = self._build_url(
             self.link_sheets.deleteSeries.format(SHEET_TOKEN=self.sheet_token).human_repr(),
         )
@@ -484,7 +550,7 @@ class FeiShuRequest:
     ) -> requests.Response:
         """
         [写入图片](https://open.feishu.cn/document/server-docs/docs/sheets-v3/data-operation/write-images)
-        
+
         :param cell: 示例: 'a2', 'B33', 'df56'
         :param image: 可传入一个本地图片的路径或者已经加载好的二进制数据
         :param image_name: 图片名称

@@ -2,7 +2,7 @@ import pandas as pd
 
 from fastfeishu.core.operations import FeiShuSheetOperations
 from typing import Union, Any, Optional, List, Generator, Dict, Literal, Type, Tuple, Callable
-from fastfeishu.helpers import num_to_excel_col, match_row_num_by_range, match_col_letter_by_range, excel_col_to_num
+from fastfeishu.helpers import num_to_excel_col, match_row_num_by_range, match_col_letter_by_range, excel_col_to_num, cell_is_blank
 from fastfeishu.exceptions.exception import FeiShuColumnNotExist, FeiShuException
 from fastfeishu.core.interface import FeiShuInterface
 from fastfeishu.utils.partition_grid import partition_grid
@@ -37,7 +37,7 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         :param col_name: 列名（列的第一行为列名）
         """
         return num_to_excel_col(self.get_index_by_col_name(col_name))
-    
+
     # -------------------------------------- 写操作 --------------------------------------------
 
     def _convert_data_to_grid(
@@ -190,12 +190,12 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         # 1. 将 None 转化为 '' 字符串可以适配飞书 接口往后追加数据
         data_list = [[d] if d is not None else ['']
                      for d in data_list]
-        
+
         # 2. 检查列是否存在。考虑此函数使用场景是向已有列中追加数据
         #    所以不自动创建，以免造成不明确的预期
         if column_name not in self.header:
             raise FeiShuColumnNotExist(column_name, f' 列不存在，请检查，先创建后写入')
-        
+
         # 3. 写入数据
         sheet_range = f'{col_letter}{end_row_num}:{col_letter}{len(data_list)+end_row_num-1}'
         self.append(sheet_range, data_list)
@@ -528,7 +528,253 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         col_letter = num_to_excel_col(col_index)
         data = read_method(f'{col_letter}2:{col_letter}{self.get_sheet_info()["rowCount"]}')
         return [row[0] for row in data]
-    
+
+    def read_row(
+        self,
+        row_number: int,
+        full_row: bool = False,
+        read_method: Callable[str, List[List[Any]]] = None
+    ) -> Dict[str, Any]:
+        """
+        读取指定单行的数据，返回字典格式。
+
+        注意：此方法只读取单行数据，不支持行范围读取。
+        如需读取多行，请使用 read() 方法读取范围，或使用 iterrows() 方法流式读取。
+
+        根据 full_row 参数决定读取整行还是只读取和表头等长的数据：
+        - full_row=False（默认）: 只读取和表头等长的列数据
+        - full_row=True: 读取整行所有有数据的列
+
+        返回字典的键规则：
+        - 在表头范围内的列：
+          - 如果表头有值（使用 cell_is_blank 检查），使用表头名称作为键
+          - 如果表头为空（None/空字符串/NaN），使用列字母索引作为键（A, B, C, ...）
+        - 超出表头范围的列：使用列字母索引作为键（A, B, C, ...）
+
+        Note:
+            - row_number 从 1 开始计数，只能指定单个行号
+            - 当 row_number=1 时，返回的字典键为列字母索引（因为第一行就是表头）
+            - read_method 参数用于选择不同的读取方式（默认 read_human，可选 read_raw 等）
+
+        Args:
+            row_number: 要读取的行号（从 1 开始，必须是单个行号）
+            full_row: 是否读取整行，False 表示只读和表头等长的列
+            read_method: 读取单元格的方法引用，默认为 read_human
+                - read_human: 人类可读方式（默认）
+                - read_raw: 读取原始数据（含公式）
+                - read: 基础读取方法
+
+        Returns:
+            字典，键为表头名称或列字母索引，值为对应单元格的值
+
+        Example:
+            >>> # 假设表头为 ["姓名", "年龄"]，读取第2行（只读表头范围）
+            >>> sheet.read_row(2)
+            >>> # 返回: {"姓名": "张三", "年龄": 25}
+            >>>
+            >>> # 读取第2行（包含表头范围外的列）
+            >>> sheet.read_row(2, full_row=True)
+            >>> # 返回: {"姓名": "张三", "年龄": 25, "C": "备注", "D": "其他"}
+            >>>
+            >>> # 读取第1行（表头行）
+            >>> sheet.read_row(1)
+            >>> # 返回: {"A": "姓名", "B": "年龄"}
+            >>>
+            >>> # 使用 read_raw 读取公式
+            >>> sheet.read_row(3, read_method=sheet.read_raw)
+            >>> # 返回: {"姓名": "李四", "年龄": "=B2+1"}
+        """
+        if read_method is None:
+            read_method = self.read_human
+
+        # 获取表格信息
+        sheet_info = self.get_sheet_info()
+        total_columns = sheet_info["columnCount"]
+
+        # 确定读取的列范围
+        if full_row:
+            # 读取整行
+            end_col = num_to_excel_col(total_columns)
+        else:
+            # 只读和表头等长的列
+            header_len = len(self.get_header())
+            end_col = num_to_excel_col(header_len)
+
+        # 构造读取范围并读取数据
+        range_str = f"A{row_number}:{end_col}{row_number}"
+        data = read_method(range_str)
+        row_data = data[0] if data else []
+
+        # 构造返回字典
+        result = {}
+
+        if row_number == 1:
+            # 第一行是表头，使用列字母索引作为键
+            for i, value in enumerate(row_data):
+                col_letter = num_to_excel_col(i + 1)
+                result[col_letter] = value
+        else:
+            # 非表头行，使用表头名称或列字母索引作为键
+            header = self.get_header()
+            for i, value in enumerate(row_data):
+                if i < len(header):
+                    # 在表头范围内
+                    header_value = header[i]
+                    if not cell_is_blank(header_value):
+                        # 表头有值，使用表头名称
+                        result[header_value] = value
+                    else:
+                        # 表头为空（None/空字符串/NaN），使用列字母索引
+                        col_letter = num_to_excel_col(i + 1)
+                        result[col_letter] = value
+                else:
+                    # 超出表头范围，使用列字母索引
+                    col_letter = num_to_excel_col(i + 1)
+                    result[col_letter] = value
+
+        return result
+
+    def read_rows(
+        self,
+        row_numbers: List[int],
+        full_row: bool = False,
+        read_method: Callable[str, List[List[Any]]] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        批量读取指定多行的数据，返回字典数组。
+
+        该方法内部使用 read_batch API 一次性读取多个行范围，相比多次调用 read_row 方法性能更高。
+
+        根据 full_row 参数决定读取整行还是只读取和表头等长的数据：
+        - full_row=False（默认）: 只读取和表头等长的列数据
+        - full_row=True: 读取整行所有有数据的列
+
+        返回字典的键规则（与 read_row 一致）：
+        - 在表头范围内的列：
+          - 如果表头有值，使用表头名称作为键
+          - 如果表头为空（None/空字符串/NaN），使用列字母索引作为键（A, B, C, ...）
+        - 超出表头范围的列：使用列字母索引作为键（A, B, C, ...）
+
+        Note:
+            - row_numbers 中的行号从 1 开始计数
+            - 当某行号为 1 时，该行返回的字典键为列字母索引（因为第一行就是表头）
+            - 返回数组的顺序与 row_numbers 的顺序一致
+            - read_method 参数用于选择不同的读取方式（默认 read_human，可选 read_raw 等）
+            - 该接口返回数据的最大限制为 10 MB
+
+        Args:
+            row_numbers: 要读取的行号列表（从 1 开始），例如 [2, 3, 5, 10]
+            full_row: 是否读取整行，False 表示只读和表头等长的列
+            read_method: 读取单元格的方法引用，默认为 read_human
+                - read_human: 人类可读方式（默认）
+                - read_raw: 读取原始数据（含公式）
+                - read: 基础读取方法
+
+        Returns:
+            字典数组，每个字典表示一行数据。
+            字典的键为表头名称或列字母索引，值为对应单元格的值。
+
+        Example:
+            >>> # 假设表头为 ["姓名", "年龄"]，批量读取第2、3、5行
+            >>> sheet.read_rows([2, 3, 5])
+            >>> # 返回: [
+            >>> #     {"姓名": "张三", "年龄": 25},
+            >>> #     {"姓名": "李四", "年龄": 30},
+            >>> #     {"姓名": "王五", "年龄": 28}
+            >>> # ]
+            >>>
+            >>> # 读取包含表头范围外的列
+            >>> sheet.read_rows([2, 3], full_row=True)
+            >>> # 返回: [
+            >>> #     {"姓名": "张三", "年龄": 25, "C": "备注1"},
+            >>> #     {"姓名": "李四", "年龄": 30, "C": "备注2"}
+            >>> # ]
+            >>>
+            >>> # 使用 read_raw 读取公式
+            >>> sheet.read_rows([2, 3], read_method=sheet.read_raw)
+            >>> # 返回: [
+            >>> #     {"姓名": "张三", "年龄": "=B1+1"},
+            >>> #     {"姓名": "李四", "年龄": "=B2+1"}
+            >>> # ]
+        """
+        if not row_numbers:
+            return []
+
+        if read_method is None:
+            read_method = self.read_human
+
+        # 获取表格信息
+        sheet_info = self.get_sheet_info()
+        total_columns = sheet_info["columnCount"]
+
+        # 确定读取的列范围
+        if full_row:
+            # 读取整行
+            end_col = num_to_excel_col(total_columns)
+        else:
+            # 只读和表头等长的列
+            header_len = len(self.get_header())
+            end_col = num_to_excel_col(header_len)
+
+        # 在调用 API 前缓存 header，避免后续重复获取
+        header = self.get_header()
+
+        # 构造多个范围字符串
+        ranges = [f"A{row_num}:{end_col}{row_num}" for row_num in row_numbers]
+
+        # 根据 read_method 选择底层调用方式
+        # read_method 是 FeiShuSheet 的方法，内部会调用 FeiShuRequest 的方法
+        # 我们需要直接使用 FeiShuRequest 的 read_batch 方法
+        # 但为了兼容 read_method 参数（可能是 read_human/read_raw/read），
+        # 我们需要判断 value_render_option
+
+        # 根据 read_method 判断使用哪种渲染选项
+        if read_method == self.read_raw:
+            value_render_option = "Formula"
+        else:
+            value_render_option = "ToString"
+
+        # 调用底层 read_batch 方法（通过 _request 访问）
+        response = self._request.read_batch(ranges, value_render_option=value_render_option)
+        data = response.json()
+
+        # 解析返回数据（使用之前缓存的 header）
+        result = []
+
+        for i, value_range in enumerate(data["data"]["valueRanges"]):
+            row_data = value_range["values"][0] if value_range.get("values") else []
+            row_number = row_numbers[i]
+
+            # 构造返回字典（与 read_row 逻辑一致）
+            row_dict = {}
+
+            if row_number == 1:
+                # 第一行是表头，使用列字母索引作为键
+                for j, value in enumerate(row_data):
+                    col_letter = num_to_excel_col(j + 1)
+                    row_dict[col_letter] = value
+            else:
+                # 非表头行，使用表头名称或列字母索引作为键
+                for j, value in enumerate(row_data):
+                    if j < len(header):
+                        # 在表头范围内
+                        header_value = header[j]
+                        if not cell_is_blank(header_value):
+                            # 表头有值，使用表头名称
+                            row_dict[header_value] = value
+                        else:
+                            # 表头为空（None/空字符串/NaN），使用列字母索引
+                            col_letter = num_to_excel_col(j + 1)
+                            row_dict[col_letter] = value
+                    else:
+                        # 超出表头范围，使用列字母索引
+                        col_letter = num_to_excel_col(j + 1)
+                        row_dict[col_letter] = value
+
+            result.append(row_dict)
+
+        return result
+
     def get_title(self) -> str:
         info = self.get_sheet_info()
         if "title" in info:

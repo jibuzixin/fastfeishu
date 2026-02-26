@@ -179,6 +179,77 @@ if __name__ == '__main__':
     print(column_data)  # [1, 2, 3, 4, ...]
 ```
 
+#### 读取指定行
+
+```python
+from fastfeishu.core import FeiShuSheet
+
+if __name__ == '__main__':
+    s = FeiShuSheet('飞书链接', readonly=True)
+
+    # 读取第2行（默认只读和表头等长的列）
+    # 假设表头为 ["姓名", "年龄"]
+    row_data = s.read_row(2)
+    print(row_data)  # {"姓名": "张三", "年龄": 25}
+
+    # 读取整行（包含表头范围外的列）
+    # 超出表头的列使用列字母索引作为键
+    row_data_full = s.read_row(2, full_row=True)
+    print(row_data_full)  # {"姓名": "张三", "年龄": 25, "C": "备注", "D": "其他"}
+
+    # 读取表头行（第1行）
+    # 使用列字母索引作为键
+    header_row = s.read_row(1)
+    print(header_row)  # {"A": "姓名", "B": "年龄"}
+
+    # 使用 read_raw 读取公式
+    row_with_formula = s.read_row(3, read_method=s.read_raw)
+    print(row_with_formula)  # {"姓名": "李四", "年龄": "=B2+1"}
+
+    # 当表头某列为None或空字符串时，自动使用列字母索引
+    # 假设表头为 ["姓名", None, "", "城市"]
+    row_with_none_header = s.read_row(2)
+    print(row_with_none_header)  # {"姓名": "张三", "B": 25, "C": "测试", "城市": "北京"}
+```
+
+#### 批量读取多行
+
+使用 `read_rows` 方法可以一次性读取多个不连续的行，相比多次调用 `read_row` 性能更高（使用飞书批量读取 API）。
+
+```python
+from fastfeishu.core import FeiShuSheet
+
+if __name__ == '__main__':
+    s = FeiShuSheet('飞书链接', readonly=True)
+
+    # 批量读取第2、3、5行（默认只读和表头等长的列）
+    # 假设表头为 ["姓名", "年龄", "城市"]
+    rows_data = s.read_rows([2, 3, 5])
+    print(rows_data)
+    # [
+    #     {"姓名": "张三", "年龄": 25, "城市": "北京"},
+    #     {"姓名": "李四", "年龄": 30, "城市": "上海"},
+    #     {"姓名": "王五", "年龄": 28, "城市": "广州"}
+    # ]
+
+    # 读取整行（包含表头范围外的列）
+    rows_data_full = s.read_rows([2, 3], full_row=True)
+    print(rows_data_full)
+    # [
+    #     {"姓名": "张三", "年龄": 25, "C": "备注1", "D": "其他1"},
+    #     {"姓名": "李四", "年龄": 30, "C": "备注2", "D": "其他2"}
+    # ]
+
+    # 同时读取表头行和数据行
+    rows_with_header = s.read_rows([1, 2, 3])
+    # 第1行使用列字母索引，其他行使用表头名称
+
+    # 使用 read_raw 读取公式
+    rows_with_formula = s.read_rows([2, 3], read_method=s.read_raw)
+
+    # 注意：该接口返回数据的最大限制为 10 MB
+```
+
 #### 遍历整张表（流式读取）
 
 ```python
@@ -667,6 +738,8 @@ if __name__ == '__main__':
 - `read_human(sheet_range)` - 人类可读方式读取
 - `read_images(sheet_range)` - 读取图片
 - `read_column(column_name)` - 读取指定列（返回一维数组）
+- `read_row(row_number, full_row=False, read_method=None)` - 读取指定行（返回字典）
+- `read_rows(row_number, full_row=False, read_method=None)` - 批量读取指定多行的数据（返回字典）
 - `iterrows(start_row=2, end_row=None, batch_size=500)` - 流式迭代
 - `get_title()` - 获取标题
 - `get_header()` - 获取表头

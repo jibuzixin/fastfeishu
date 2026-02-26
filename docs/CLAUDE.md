@@ -358,3 +358,64 @@ git commit -m "[feat] Your commit message"
 # 5. Push to remote
 git push origin dev
 ```
+
+## Development Best Practices & Lessons Learned
+
+### Adding New Read/Write Methods - Key Points
+
+**1. Method Naming**
+- Single operations use singular form: `read_row`, `read_column`
+- Name must clearly indicate scope (single item vs range)
+- Document limitations explicitly
+
+**2. Parameter Consistency**
+- All read methods should accept `read_method` parameter (default: `read_human`)
+- Type hint: `Callable[str, List[List[Any]]]`
+
+**3. Return Type Design**
+- Use descriptive dictionary keys
+- For missing/None header values: use column letters (A, B, C) via `num_to_excel_col()`
+- Use helper `cell_is_blank()` from `fastfeishu.helpers` to check empty values
+
+**4. Documentation Requirements**
+- Clear description with limitations
+- All parameters with types and defaults
+- Return value structure
+- 2-3 usage examples
+- Reference alternative methods
+
+**5. Testing & README**
+- Write unit tests covering basic + edge cases
+- Update README with usage examples
+- Update API reference section
+
+### Common Pitfalls
+
+1. **Don't break layer architecture**: helpers → models → core → utils
+2. **Check for None/empty in dictionary keys**: Use `cell_is_blank()` helper
+3. **Avoid calling methods multiple times**: Cache results (e.g., `data = read_method()` once)
+4. **Don't skip README updates**: Code without docs is incomplete
+5. **Follow existing patterns**: Check similar methods before implementing
+
+### Quick Reference
+
+```python
+# ✅ Good: Use helper to check empty values
+from fastfeishu.helpers import cell_is_blank
+
+if not cell_is_blank(header_value):
+    result[header_value] = value
+else:
+    result[num_to_excel_col(i + 1)] = value
+
+# ❌ Bad: Direct checks miss edge cases
+if header_value is not None and header_value != '':
+    result[header_value] = value  # Misses NaN, whitespace, etc.
+```
+
+
+1. **Don't break the layer architecture**: Respect the dependency hierarchy (helpers → models → core → utils)
+2. **Don't skip documentation**: Chinese docstrings are required, English inline comments for complex logic
+3. **Don't forget parameter defaults**: Always provide sensible defaults (e.g., `read_method=None` → defaults to `read_human`)
+4. **Don't ignore existing patterns**: Check similar methods before implementing new ones
+5. **Don't skip README updates**: Code without documentation is incomplete
