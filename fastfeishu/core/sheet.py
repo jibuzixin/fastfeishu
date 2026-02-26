@@ -703,21 +703,9 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         if read_method is None:
             read_method = self.read_human
 
-        # 获取表格信息
-        sheet_info = self.get_sheet_info()
-        total_columns = sheet_info["columnCount"]
-
         # 确定读取的列范围
-        if full_row:
-            # 读取整行
-            end_col = num_to_excel_col(total_columns)
-        else:
-            # 只读和表头等长的列
-            header_len = len(self.get_header())
-            end_col = num_to_excel_col(header_len)
-
-        # 在调用 API 前缓存 header，避免后续重复获取
-        header = self.get_header()
+        # get_header() 内部已有缓存机制且读取的是完整列范围
+        end_col = num_to_excel_col(len(self.get_header()))
 
         # 构造多个范围字符串
         ranges = [f"A{row_num}:{end_col}{row_num}" for row_num in row_numbers]
@@ -734,14 +722,13 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         else:
             value_render_option = "ToString"
 
-        # 调用底层 read_batch 方法（通过 _request 访问）
-        response = self._request.read_batch(ranges, value_render_option=value_render_option)
-        data = response.json()
+        # 调用 Operations 层的 read_batch 方法（带权限控制）
+        data = self.read_batch(ranges, value_render_option=value_render_option)
 
         # 解析返回数据（使用之前缓存的 header）
         result = []
 
-        for i, value_range in enumerate(data["data"]["valueRanges"]):
+        for i, value_range in enumerate(data["valueRanges"]):
             row_data = value_range["values"][0] if value_range.get("values") else []
             row_number = row_numbers[i]
 
@@ -755,6 +742,7 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
                     row_dict[col_letter] = value
             else:
                 # 非表头行，使用表头名称或列字母索引作为键
+                header = self.get_header()
                 for j, value in enumerate(row_data):
                     if j < len(header):
                         # 在表头范围内

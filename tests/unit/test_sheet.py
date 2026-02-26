@@ -591,13 +591,9 @@ class TestReadRows:
         mock_post.return_value = mock_token_resp
 
         # Mock metadata（初始化需要）
-        mock_meta_resp1 = Mock()
-        mock_meta_resp1.json.return_value = mock_sheet_metadata_response
-        mock_meta_resp1.raise_for_status = Mock()
-
-        mock_meta_resp2 = Mock()
-        mock_meta_resp2.json.return_value = mock_sheet_metadata_response
-        mock_meta_resp2.raise_for_status = Mock()
+        mock_meta_resp = Mock()
+        mock_meta_resp.json.return_value = mock_sheet_metadata_response
+        mock_meta_resp.raise_for_status = Mock()
 
         # Mock 读取表头
         mock_header_resp = Mock()
@@ -645,9 +641,9 @@ class TestReadRows:
         }
         mock_batch_resp.raise_for_status = Mock()
 
+        # 调用顺序：初始化metadata -> 读取header -> read_batch
         mock_get.side_effect = [
-            mock_meta_resp1,  # 初始化第一次 metadata
-            mock_meta_resp2,  # 初始化第二次 metadata (get_sheet_info)
+            mock_meta_resp,    # 初始化 metadata
             mock_header_resp,  # 读取表头
             mock_batch_resp    # read_batch
         ]
@@ -673,14 +669,10 @@ class TestReadRows:
         mock_token_resp.json.return_value = mock_tenant_token_response
         mock_post.return_value = mock_token_resp
 
-        # Mock metadata（初始化需要两次）
-        mock_meta_resp1 = Mock()
-        mock_meta_resp1.json.return_value = mock_sheet_metadata_response
-        mock_meta_resp1.raise_for_status = Mock()
-
-        mock_meta_resp2 = Mock()
-        mock_meta_resp2.json.return_value = mock_sheet_metadata_response
-        mock_meta_resp2.raise_for_status = Mock()
+        # Mock metadata（初始化需要）
+        mock_meta_resp = Mock()
+        mock_meta_resp.json.return_value = mock_sheet_metadata_response
+        mock_meta_resp.raise_for_status = Mock()
 
         # Mock 读取表头
         mock_header_resp = Mock()
@@ -722,11 +714,12 @@ class TestReadRows:
         }
         mock_batch_resp.raise_for_status = Mock()
 
+        # 调用顺序：初始化metadata -> 读取header -> read_batch
+        # 因为 full_row 不再单独调用 get_sheet_info，所以和 full_row=False 一样
         mock_get.side_effect = [
-            mock_meta_resp1,    # 初始化第一次 metadata
-            mock_meta_resp2,    # 初始化第二次 metadata (get_sheet_info)
-            mock_header_resp,   # 第一次读取表头（在 read_rows 之前）
-            mock_batch_resp     # read_batch
+            mock_meta_resp,    # 初始化 metadata
+            mock_header_resp,  # 读取表头
+            mock_batch_resp    # read_batch
         ]
 
         sheet = FeiShuSheet(feishu_url, readonly=True)
@@ -780,14 +773,10 @@ class TestReadRows:
         mock_token_resp.json.return_value = mock_tenant_token_response
         mock_post.return_value = mock_token_resp
 
-        # Mock metadata
-        mock_meta_resp1 = Mock()
-        mock_meta_resp1.json.return_value = mock_sheet_metadata_response
-        mock_meta_resp1.raise_for_status = Mock()
-
-        mock_meta_resp2 = Mock()
-        mock_meta_resp2.json.return_value = mock_sheet_metadata_response
-        mock_meta_resp2.raise_for_status = Mock()
+        # Mock metadata（初始化需要）
+        mock_meta_resp = Mock()
+        mock_meta_resp.json.return_value = mock_sheet_metadata_response
+        mock_meta_resp.raise_for_status = Mock()
 
         # Mock 读取表头（第二列为None，第三列为空字符串）
         mock_header_resp = Mock()
@@ -829,11 +818,11 @@ class TestReadRows:
         }
         mock_batch_resp.raise_for_status = Mock()
 
+        # 调用顺序：初始化metadata -> 读取header -> read_batch
         mock_get.side_effect = [
-            mock_meta_resp1,
-            mock_meta_resp2,
-            mock_header_resp,
-            mock_batch_resp
+            mock_meta_resp,    # 初始化 metadata
+            mock_header_resp,  # 读取表头
+            mock_batch_resp    # read_batch
         ]
 
         sheet = FeiShuSheet(feishu_url, readonly=True)
@@ -871,14 +860,10 @@ class TestReadRows:
         mock_token_resp.json.return_value = mock_tenant_token_response
         mock_post.return_value = mock_token_resp
 
-        # Mock metadata
-        mock_meta_resp1 = Mock()
-        mock_meta_resp1.json.return_value = mock_sheet_metadata_response
-        mock_meta_resp1.raise_for_status = Mock()
-
-        mock_meta_resp2 = Mock()
-        mock_meta_resp2.json.return_value = mock_sheet_metadata_response
-        mock_meta_resp2.raise_for_status = Mock()
+        # Mock metadata（初始化需要）
+        mock_meta_resp = Mock()
+        mock_meta_resp.json.return_value = mock_sheet_metadata_response
+        mock_meta_resp.raise_for_status = Mock()
 
         # Mock 读取表头
         mock_header_resp = Mock()
@@ -920,11 +905,11 @@ class TestReadRows:
         }
         mock_batch_resp.raise_for_status = Mock()
 
+        # 调用顺序：初始化metadata -> 读取header -> read_batch
         mock_get.side_effect = [
-            mock_meta_resp1,
-            mock_meta_resp2,
-            mock_header_resp,
-            mock_batch_resp
+            mock_meta_resp,    # 初始化 metadata
+            mock_header_resp,  # 读取表头
+            mock_batch_resp    # read_batch
         ]
 
         sheet = FeiShuSheet(feishu_url, readonly=True)

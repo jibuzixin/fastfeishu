@@ -332,6 +332,40 @@ class FeiShuSheetOperations:
         response = self._request.read(sheet_range, value_render_option, date_time_render_option)
         return _response_json(response)["data"]["valueRange"]["values"]
 
+    def read_batch(
+        self,
+        ranges: List[str],
+        value_render_option: str = "ToString",
+        date_time_render_option: str = "FormattedString"
+    ) -> Dict[str, Any]:
+        """
+        [读取多个范围](https://open.feishu.cn/document/server-docs/docs/sheets-v3/data-operation/reading-multiple-ranges)
+
+        批量读取电子表格中多个指定范围的数据。该接口返回数据的最大限制为 10 MB。
+
+        Args:
+            ranges: 要读取的范围列表，例如 ["A1:B2", "D5:E10"]
+            value_render_option: 指定单元格数据的格式。可选值如下所示。当参数缺省时，默认不进行公式计算，返回公式本身，且单元格为数值格式。
+                - ToString: 返回纯文本的值（数值类型除外）
+                - Formula: 单元格中含有公式时，返回公式本身
+                - FormattedValue: 计算并格式化单元格
+                - UnformattedValue: 计算但不对单元格进行格式化
+            date_time_render_option: 指定数据类型为日期、时间、或时间日期的单元格数据的格式。
+                - 若不传值，默认返回浮点数值
+                - 可选值为 FormattedString，此时接口将计算并对日期、时间、或时间日期类型的数据格式化并返回格式化后的字符串
+
+        Returns:
+            包含多个范围数据的字典，格式为:
+            {
+                "valueRanges": [
+                    {"range": "sheet1!A1:B2", "values": [[...], [...]]},
+                    {"range": "sheet1!D5:E10", "values": [[...], [...]]}
+                ]
+            }
+        """
+        response = self._request.read_batch(ranges, value_render_option, date_time_render_option)
+        return _response_json(response)["data"]
+
     def read_images(self, sheet_range) -> List[List[Any]]:
         response = self._request.read_images(sheet_range)
         return _response_json(response)["data"]["valueRange"]["values"]
