@@ -32,11 +32,63 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
     def get_letter_by_col_name(self, col_name: str) -> str:
         """
         根据列名获取对应列的字母索引，起始序号为 A。
-        例如：get_index_by_col_name("端到端回复") -> AC, 将会返回“端到端回复”列在 AC 列。
+        例如：get_index_by_col_name("端到端回复") -> AC, 将会返回"端到端回复"列在 AC 列。
 
         :param col_name: 列名（列的第一行为列名）
         """
         return num_to_excel_col(self.get_index_by_col_name(col_name))
+
+    def check_columns_exist(self, col_names: List[str]) -> Dict[str, bool]:
+        """
+        检测指定的列名是否存在于表头中，返回每个列名的存在状态。
+
+        该方法基于表头（第一行）进行检测，使用 self.get_header() 获取表头数据。
+
+        Note:
+            - 默认第一行为表头
+            - 返回字典的键为传入的列名，值为布尔值（True 表示存在，False 表示不存在）
+            - 当表头有相同的重复名字时，从左到右默认取第一个
+
+        Args:
+            col_names: 需要检测的列名数组
+
+        Returns:
+            字典，键为列名，值为布尔值，表示该列是否存在
+
+        Example:
+            >>> sheet.check_columns_exist(["姓名", "年龄", "不存在的列"])
+            >>> # 返回: {"姓名": True, "年龄": True, "不存在的列": False}
+        """
+        header = self.get_header()
+        return {col_name: col_name in header for col_name in col_names}
+
+    def has_columns(self, col_names: List[str]) -> bool:
+        """
+        检测指定的所有列名是否都存在于表头中。
+
+        该方法基于表头（第一行）进行检测，使用 self.get_header() 获取表头数据。
+        只有当所有列名都存在时才返回 True，否则返回 False。
+
+        Note:
+            - 默认第一行为表头
+            - 当表头有相同的重复名字时，从左到右默认取第一个
+            - 如果需要知道具体哪些列存在/不存在，请使用 check_columns_exist() 方法
+
+        Args:
+            col_names: 需要检测的列名数组
+
+        Returns:
+            bool: 所有列名都存在返回 True，否则返回 False
+
+        Example:
+            >>> sheet.has_columns(["姓名", "年龄"])
+            >>> # 返回: True（如果两列都存在）
+            >>>
+            >>> sheet.has_columns(["姓名", "不存在的列"])
+            >>> # 返回: False（因为"不存在的列"不存在）
+        """
+        header = self.get_header()
+        return all(col_name in header for col_name in col_names)
 
     # -------------------------------------- 写操作 --------------------------------------------
 

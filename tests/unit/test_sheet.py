@@ -923,3 +923,240 @@ class TestReadRows:
 
         # 第2行使用表头名称作为键
         assert result[1] == {"姓名": "张三", "年龄": 25, "城市": "北京"}
+
+
+@pytest.mark.unit
+class TestCheckColumns:
+    """测试列存在性检测方法"""
+
+    @patch('fastfeishu.core.request.requests.post')
+    @patch('fastfeishu.core.request.requests.get')
+    def test_check_columns_exist_all_exist(self, mock_get, mock_post,
+                                          mock_tenant_token_response,
+                                          mock_sheet_metadata_response,
+                                          mock_read_response,
+                                          feishu_url):
+        """测试所有列都存在的情况"""
+        mock_token_resp = Mock()
+        mock_token_resp.json.return_value = mock_tenant_token_response
+        mock_post.return_value = mock_token_resp
+
+        mock_meta_resp = Mock()
+        mock_meta_resp.json.return_value = mock_sheet_metadata_response
+        mock_meta_resp.raise_for_status = Mock()
+
+        mock_read_resp = Mock()
+        mock_read_resp.json.return_value = mock_read_response
+        mock_read_resp.raise_for_status = Mock()
+
+        mock_get.side_effect = [mock_meta_resp, mock_read_resp]
+
+        sheet = FeiShuSheet(feishu_url, readonly=True)
+        result = sheet.check_columns_exist(["CaseID", "查询"])
+
+        # 验证返回字典格式，所有列都存在
+        assert isinstance(result, dict)
+        assert result["CaseID"] is True
+        assert result["查询"] is True
+
+    @patch('fastfeishu.core.request.requests.post')
+    @patch('fastfeishu.core.request.requests.get')
+    def test_check_columns_exist_partial(self, mock_get, mock_post,
+                                        mock_tenant_token_response,
+                                        mock_sheet_metadata_response,
+                                        mock_read_response,
+                                        feishu_url):
+        """测试部分列存在的情况"""
+        mock_token_resp = Mock()
+        mock_token_resp.json.return_value = mock_tenant_token_response
+        mock_post.return_value = mock_token_resp
+
+        mock_meta_resp = Mock()
+        mock_meta_resp.json.return_value = mock_sheet_metadata_response
+        mock_meta_resp.raise_for_status = Mock()
+
+        mock_read_resp = Mock()
+        mock_read_resp.json.return_value = mock_read_response
+        mock_read_resp.raise_for_status = Mock()
+
+        mock_get.side_effect = [mock_meta_resp, mock_read_resp]
+
+        sheet = FeiShuSheet(feishu_url, readonly=True)
+        result = sheet.check_columns_exist(["CaseID", "不存在的列", "查询"])
+
+        # 验证返回字典格式，只有部分列存在
+        assert isinstance(result, dict)
+        assert result["CaseID"] is True
+        assert result["不存在的列"] is False
+        assert result["查询"] is True
+
+    @patch('fastfeishu.core.request.requests.post')
+    @patch('fastfeishu.core.request.requests.get')
+    def test_check_columns_exist_none_exist(self, mock_get, mock_post,
+                                           mock_tenant_token_response,
+                                           mock_sheet_metadata_response,
+                                           mock_read_response,
+                                           feishu_url):
+        """测试所有列都不存在的情况"""
+        mock_token_resp = Mock()
+        mock_token_resp.json.return_value = mock_tenant_token_response
+        mock_post.return_value = mock_token_resp
+
+        mock_meta_resp = Mock()
+        mock_meta_resp.json.return_value = mock_sheet_metadata_response
+        mock_meta_resp.raise_for_status = Mock()
+
+        mock_read_resp = Mock()
+        mock_read_resp.json.return_value = mock_read_response
+        mock_read_resp.raise_for_status = Mock()
+
+        mock_get.side_effect = [mock_meta_resp, mock_read_resp]
+
+        sheet = FeiShuSheet(feishu_url, readonly=True)
+        result = sheet.check_columns_exist(["不存在列1", "不存在列2"])
+
+        # 验证返回字典格式，所有列都不存在
+        assert isinstance(result, dict)
+        assert result["不存在列1"] is False
+        assert result["不存在列2"] is False
+
+    @patch('fastfeishu.core.request.requests.post')
+    @patch('fastfeishu.core.request.requests.get')
+    def test_check_columns_exist_empty_list(self, mock_get, mock_post,
+                                           mock_tenant_token_response,
+                                           mock_sheet_metadata_response,
+                                           mock_read_response,
+                                           feishu_url):
+        """测试空数组的情况"""
+        mock_token_resp = Mock()
+        mock_token_resp.json.return_value = mock_tenant_token_response
+        mock_post.return_value = mock_token_resp
+
+        mock_meta_resp = Mock()
+        mock_meta_resp.json.return_value = mock_sheet_metadata_response
+        mock_meta_resp.raise_for_status = Mock()
+
+        mock_read_resp = Mock()
+        mock_read_resp.json.return_value = mock_read_response
+        mock_read_resp.raise_for_status = Mock()
+
+        mock_get.side_effect = [mock_meta_resp, mock_read_resp]
+
+        sheet = FeiShuSheet(feishu_url, readonly=True)
+        result = sheet.check_columns_exist([])
+
+        # 验证返回空字典
+        assert isinstance(result, dict)
+        assert result == {}
+
+    @patch('fastfeishu.core.request.requests.post')
+    @patch('fastfeishu.core.request.requests.get')
+    def test_has_columns_all_exist(self, mock_get, mock_post,
+                                  mock_tenant_token_response,
+                                  mock_sheet_metadata_response,
+                                  mock_read_response,
+                                  feishu_url):
+        """测试所有列都存在时返回 True"""
+        mock_token_resp = Mock()
+        mock_token_resp.json.return_value = mock_tenant_token_response
+        mock_post.return_value = mock_token_resp
+
+        mock_meta_resp = Mock()
+        mock_meta_resp.json.return_value = mock_sheet_metadata_response
+        mock_meta_resp.raise_for_status = Mock()
+
+        mock_read_resp = Mock()
+        mock_read_resp.json.return_value = mock_read_response
+        mock_read_resp.raise_for_status = Mock()
+
+        mock_get.side_effect = [mock_meta_resp, mock_read_resp]
+
+        sheet = FeiShuSheet(feishu_url, readonly=True)
+        result = sheet.has_columns(["CaseID", "查询"])
+
+        # 验证所有列都存在时返回 True
+        assert result is True
+
+    @patch('fastfeishu.core.request.requests.post')
+    @patch('fastfeishu.core.request.requests.get')
+    def test_has_columns_partial_exist(self, mock_get, mock_post,
+                                      mock_tenant_token_response,
+                                      mock_sheet_metadata_response,
+                                      mock_read_response,
+                                      feishu_url):
+        """测试部分列存在时返回 False"""
+        mock_token_resp = Mock()
+        mock_token_resp.json.return_value = mock_tenant_token_response
+        mock_post.return_value = mock_token_resp
+
+        mock_meta_resp = Mock()
+        mock_meta_resp.json.return_value = mock_sheet_metadata_response
+        mock_meta_resp.raise_for_status = Mock()
+
+        mock_read_resp = Mock()
+        mock_read_resp.json.return_value = mock_read_response
+        mock_read_resp.raise_for_status = Mock()
+
+        mock_get.side_effect = [mock_meta_resp, mock_read_resp]
+
+        sheet = FeiShuSheet(feishu_url, readonly=True)
+        result = sheet.has_columns(["CaseID", "不存在的列"])
+
+        # 验证部分列不存在时返回 False
+        assert result is False
+
+    @patch('fastfeishu.core.request.requests.post')
+    @patch('fastfeishu.core.request.requests.get')
+    def test_has_columns_none_exist(self, mock_get, mock_post,
+                                   mock_tenant_token_response,
+                                   mock_sheet_metadata_response,
+                                   mock_read_response,
+                                   feishu_url):
+        """测试所有列都不存在时返回 False"""
+        mock_token_resp = Mock()
+        mock_token_resp.json.return_value = mock_tenant_token_response
+        mock_post.return_value = mock_token_resp
+
+        mock_meta_resp = Mock()
+        mock_meta_resp.json.return_value = mock_sheet_metadata_response
+        mock_meta_resp.raise_for_status = Mock()
+
+        mock_read_resp = Mock()
+        mock_read_resp.json.return_value = mock_read_response
+        mock_read_resp.raise_for_status = Mock()
+
+        mock_get.side_effect = [mock_meta_resp, mock_read_resp]
+
+        sheet = FeiShuSheet(feishu_url, readonly=True)
+        result = sheet.has_columns(["不存在列1", "不存在列2"])
+
+        # 验证所有列都不存在时返回 False
+        assert result is False
+
+    @patch('fastfeishu.core.request.requests.post')
+    @patch('fastfeishu.core.request.requests.get')
+    def test_has_columns_empty_list(self, mock_get, mock_post,
+                                   mock_tenant_token_response,
+                                   mock_sheet_metadata_response,
+                                   mock_read_response,
+                                   feishu_url):
+        """测试空数组时返回 True（all([]) 在 Python 中为 True）"""
+        mock_token_resp = Mock()
+        mock_token_resp.json.return_value = mock_tenant_token_response
+        mock_post.return_value = mock_token_resp
+
+        mock_meta_resp = Mock()
+        mock_meta_resp.json.return_value = mock_sheet_metadata_response
+        mock_meta_resp.raise_for_status = Mock()
+
+        mock_read_resp = Mock()
+        mock_read_resp.json.return_value = mock_read_response
+        mock_read_resp.raise_for_status = Mock()
+
+        mock_get.side_effect = [mock_meta_resp, mock_read_resp]
+
+        sheet = FeiShuSheet(feishu_url, readonly=True)
+        result = sheet.has_columns([])
+
+        # 验证空数组时返回 True（all([]) 为 True）
+        assert result is True
