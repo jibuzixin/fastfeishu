@@ -53,6 +53,7 @@ class SheetsSettings(BaseSettings):
     insertSeries: LinkAttribute
     writeImage: LinkAttribute
     style: LinkAttribute
+    styleBatchUpdate: LinkAttribute
 
 class WorkBookSettings(BaseSettings):
     """控制工作簿"""

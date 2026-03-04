@@ -636,3 +636,46 @@ class FeiShuRequest:
         response = requests.put(url, headers=self._get_request_headers(), data=json.dumps(body))
         response.raise_for_status()
         return response
+
+    def set_styles_batch_update(self, data: List[Dict[str, Any]]) -> requests.Response:
+        """
+        [批量设置单元格样式](https://open.feishu.cn/document/server-docs/docs/sheets-v3/data-operation/batch-set-cell-style)
+
+        该接口用于根据 spreadsheetToken 操作表格，批量设置单元格样式。
+
+        Args:
+            data: 样式设置数据列表，每个元素包含 ranges 和 style 字段
+                示例: [
+                    {
+                        "ranges": ["A1:B2", "C3:D4"],
+                        "style": {
+                            "font": {"bold": True, "fontSize": "12pt/1.5"},
+                            "foreColor": "#000000"
+                        }
+                    }
+                ]
+
+        Returns:
+            requests.Response: API 响应对象
+        """
+        # 处理每个样式设置项
+        processed_data = []
+        for item in data:
+            ranges = item["ranges"]
+            style = item["style"]
+
+            # 自动添加 sheet_id 前缀
+            processed_ranges = [self.sheet_id + '!' + r.upper() for r in ranges]
+
+            processed_data.append({
+                "ranges": processed_ranges,
+                "style": style
+            })
+
+        url = self._build_url(
+            self.link_sheets.styleBatchUpdate.format(SHEET_TOKEN=self.sheet_token).human_repr(),
+        )
+        body = {"data": processed_data}
+        response = requests.put(url, headers=self._get_request_headers(), data=json.dumps(body))
+        response.raise_for_status()
+        return response

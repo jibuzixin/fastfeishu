@@ -37,6 +37,8 @@ feishu:
         url: sheets/v2/spreadsheets/{SHEET_TOKEN}/values_image
       style:
         url: sheets/v2/spreadsheets/{SHEET_TOKEN}/style
+      styleBatchUpdate:
+        url: sheets/v2/spreadsheets/{SHEET_TOKEN}/styles_batch_update
     workBook:
       target: work
       create:

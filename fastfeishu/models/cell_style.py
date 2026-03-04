@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field, asdict
-from typing import Optional, Literal
+from typing import Optional, Literal, TypedDict, List, Union, Dict, Any
 
 
 @dataclass
@@ -307,3 +307,15 @@ class CellStyle:
         def build(self):
             """构建 CellStyle 对象"""
             return self.style
+
+
+class StyleRangeData(TypedDict):
+    """
+    批量设置样式的数据结构
+
+    Attributes:
+        ranges: 单元格范围列表，如 ["A1:B2", "C3:D4"]
+        style: CellStyle 样式对象或样式字典
+    """
+    ranges: List[str]
+    style: Union[CellStyle, Dict[str, Any]]

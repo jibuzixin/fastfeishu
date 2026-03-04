@@ -2,7 +2,7 @@
 
 [![Python Version](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Test Coverage](https://img.shields.io/badge/coverage-57%25-yellow)](docs/TESTING.md)
+[![Test Coverage](https://img.shields.io/badge/coverage-61%25-yellowgreen)](docs/TESTING.md)
 
 **fastfeishu** 是一个用于与飞书（Lark）Sheets API v3 交互的 Python 包，提供高级接口用于读取、写入和管理电子表格，支持批处理、图片处理和流式读取。
 
@@ -588,6 +588,98 @@ if __name__ == '__main__':
     s.set_style("A1:C3", CellStyle.builder().clean(True).build())
 ```
 
+#### 批量设置单元格样式
+
+使用 `set_styles` 可以一次性为多个范围设置不同的样式，比多次调用 `set_style` 更高效。
+
+```python
+from fastfeishu.core import FeiShuSheet
+from fastfeishu.models import CellStyle, Font
+from fastfeishu.models.cell_style import StyleRangeData
+from typing import List
+
+if __name__ == '__main__':
+    s = FeiShuSheet('飞书链接')
+
+    # 方式1：使用字典（推荐，更灵活）
+    s.set_styles([
+        {
+            "ranges": ["A1:E1"],
+            "style": CellStyle.builder()
+                .font(Font.builder().bold().font_size("14pt/1.5").build())
+                .fore_color("#000000")
+                .back_color("#e6f2ff")
+                .h_align(1)
+                .border_type("FULL_BORDER")
+                .build()
+        },
+        {
+            "ranges": ["C2:C10", "E2:E10"],
+            "style": {
+                "foreColor": "#ffffff",
+                "backColor": "#ff6b6b",
+                "hAlign": 1
+            }
+        }
+    ])
+
+    # 方式2：使用 StyleRangeData 类型（更严格的类型检查）
+    # 适合需要 IDE 类型提示和静态类型检查的场景
+    header_style = CellStyle.builder() \
+        .font(Font.builder().bold().font_size("14pt/1.5").build()) \
+        .fore_color("#000000") \
+        .back_color("#e6f2ff") \
+        .h_align(1) \
+        .v_align(1) \
+        .border_type("FULL_BORDER") \
+        .border_color("#0066cc") \
+        .build()
+
+    highlight_style = CellStyle.builder() \
+        .fore_color("#ffffff") \
+        .back_color("#ff6b6b") \
+        .h_align(1) \
+        .build()
+
+    # 显式声明类型为 List[StyleRangeData]
+    style_data: List[StyleRangeData] = [
+        StyleRangeData(
+            ranges=["A1:E1"],
+            style=header_style
+        ),
+        StyleRangeData(
+            ranges=["C2:C10", "E2:E10"],
+            style=highlight_style
+        ),
+        StyleRangeData(
+            ranges=["A2:B10"],
+            style={
+                "hAlign": 0,
+                "borderType": "FULL_BORDER"
+            }
+        )
+    ]
+    s.set_styles(style_data)
+
+    # 单个样式应用到多个范围
+    common_style = CellStyle.builder() \
+        .back_color("#f0f0f0") \
+        .border_type("FULL_BORDER") \
+        .build()
+
+    s.set_styles([
+        StyleRangeData(
+            ranges=["A1:C3", "E5:G7", "I9:K11"],
+            style=common_style
+        )
+    ])
+```
+
+**使用限制**：
+- 单次设置的范围不可超过 **5000 行 × 100 列**
+- 在设置边框样式时，单次更新的单元格数量不可超过 **30,000 个**
+- 当单元格在多个范围中时，单元格将应用请求体的最后一个样式
+
 **样式属性说明**：
 
 **字体样式 (font)**:
@@ -789,7 +881,8 @@ if __name__ == '__main__':
 - `create_sheet(title, index=0)` - 创建新Sheet
 - `copy(title)` - 复制当前Sheet
 - `update_sheet_properties(properties)` - 更新Sheet属性
-- `set_style(sheet_range, style)` - 设置样式
+- `set_style(sheet_range, style)` - 设置单个范围的样式
+- `set_styles(data)` - 批量设置多个范围的样式
 
 ## 六、异常处理
 

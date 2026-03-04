@@ -8,6 +8,7 @@ from typing import (
 import pandas as pd
 import abc
 
+
 class FeiShuInterface(abc.ABC):
     @abc.abstractmethod
     def get_header(self) -> List[str]: ...
@@ -99,6 +100,12 @@ class FeiShuInterface(abc.ABC):
 
     @abc.abstractmethod
     def delete_series(self, start_index, end_index, major_dimension: Literal["ROWS", "COLUMNS"] = "ROWS") -> int: ...
+
+    @abc.abstractmethod
+    def set_style(self, sheet_range: str, style: Union['CellStyle', Dict[str, Any]]): ...
+
+    @abc.abstractmethod
+    def set_styles(self, data: List['StyleRangeData']): ...
 
 class IterableSheetProtocol(Protocol):
     def iterrows(
