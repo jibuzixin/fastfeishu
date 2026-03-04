@@ -2,7 +2,7 @@ import pandas as pd
 
 from fastfeishu.core.operations import FeiShuSheetOperations
 from typing import Union, Any, Optional, List, Generator, Dict, Literal, Type, Tuple, Callable
-from fastfeishu.helpers import num_to_excel_col, match_row_num_by_range, match_col_letter_by_range, excel_col_to_num
+from fastfeishu.helpers import num_to_excel_col, match_row_num_by_range, match_col_letter_by_range, excel_col_to_num, cell_is_blank
 from fastfeishu.exceptions.exception import FeiShuColumnNotExist, FeiShuException
 from fastfeishu.core.interface import FeiShuInterface
 from fastfeishu.utils.partition_grid import partition_grid
@@ -32,12 +32,64 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
     def get_letter_by_col_name(self, col_name: str) -> str:
         """
         根据列名获取对应列的字母索引，起始序号为 A。
-        例如：get_index_by_col_name("端到端回复") -> AC, 将会返回“端到端回复”列在 AC 列。
+        例如：get_index_by_col_name("端到端回复") -> AC, 将会返回"端到端回复"列在 AC 列。
 
         :param col_name: 列名（列的第一行为列名）
         """
         return num_to_excel_col(self.get_index_by_col_name(col_name))
-    
+
+    def check_columns_exist(self, col_names: List[str]) -> Dict[str, bool]:
+        """
+        检测指定的列名是否存在于表头中，返回每个列名的存在状态。
+
+        该方法基于表头（第一行）进行检测，使用 self.get_header() 获取表头数据。
+
+        Note:
+            - 默认第一行为表头
+            - 返回字典的键为传入的列名，值为布尔值（True 表示存在，False 表示不存在）
+            - 当表头有相同的重复名字时，从左到右默认取第一个
+
+        Args:
+            col_names: 需要检测的列名数组
+
+        Returns:
+            字典，键为列名，值为布尔值，表示该列是否存在
+
+        Example:
+            >>> sheet.check_columns_exist(["姓名", "年龄", "不存在的列"])
+            >>> # 返回: {"姓名": True, "年龄": True, "不存在的列": False}
+        """
+        header = self.get_header()
+        return {col_name: col_name in header for col_name in col_names}
+
+    def has_columns(self, col_names: List[str]) -> bool:
+        """
+        检测指定的所有列名是否都存在于表头中。
+
+        该方法基于表头（第一行）进行检测，使用 self.get_header() 获取表头数据。
+        只有当所有列名都存在时才返回 True，否则返回 False。
+
+        Note:
+            - 默认第一行为表头
+            - 当表头有相同的重复名字时，从左到右默认取第一个
+            - 如果需要知道具体哪些列存在/不存在，请使用 check_columns_exist() 方法
+
+        Args:
+            col_names: 需要检测的列名数组
+
+        Returns:
+            bool: 所有列名都存在返回 True，否则返回 False
+
+        Example:
+            >>> sheet.has_columns(["姓名", "年龄"])
+            >>> # 返回: True（如果两列都存在）
+            >>>
+            >>> sheet.has_columns(["姓名", "不存在的列"])
+            >>> # 返回: False（因为"不存在的列"不存在）
+        """
+        header = self.get_header()
+        return all(col_name in header for col_name in col_names)
+
     # -------------------------------------- 写操作 --------------------------------------------
 
     def _convert_data_to_grid(
@@ -190,12 +242,12 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         # 1. 将 None 转化为 '' 字符串可以适配飞书 接口往后追加数据
         data_list = [[d] if d is not None else ['']
                      for d in data_list]
-        
+
         # 2. 检查列是否存在。考虑此函数使用场景是向已有列中追加数据
         #    所以不自动创建，以免造成不明确的预期
         if column_name not in self.header:
             raise FeiShuColumnNotExist(column_name, f' 列不存在，请检查，先创建后写入')
-        
+
         # 3. 写入数据
         sheet_range = f'{col_letter}{end_row_num}:{col_letter}{len(data_list)+end_row_num-1}'
         self.append(sheet_range, data_list)
@@ -403,70 +455,6 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         # 8. 使用批量写入 API
         self.write_batch(ranges_data)
 
-    def replace_placeholder(self, sheet_range: str, **kwargs):
-        """
-        将 sheet_range 范围内中出现的占位符替换为传入的键值对。
-
-        使用批量写入 API，只更新包含占位符的单元格，性能更好。
-
-        Args:
-            sheet_range: 要处理的单元格范围，如 "A1:C10"
-            **kwargs: 占位符的键值对，用于替换占位符
-
-        Example:
-            >>> # 假设单元格中有 "Hello {name}, you are {age} years old"
-            >>> sheet.replace_placeholder("A1:B2", name="Alice", age=30)
-            >>> # 结果: "Hello Alice, you are 30 years old"
-        """
-        # 1. 读取原始数据
-        read_range = self.read_raw(sheet_range)
-
-        # 2. 收集需要更新的单元格
-        ranges_data = []
-
-        # 解析起始位置
-        start_col, _ = match_col_letter_by_range(sheet_range)
-        start_row, _ = match_row_num_by_range(sheet_range)
-        start_col_num = excel_col_to_num(start_col)
-        start_row_num = int(start_row)
-
-        # 3. 遍历数据，只对包含占位符的单元格进行替换
-        for r, row in enumerate(read_range):
-            for c, cell in enumerate(row):
-                if cell is not None and isinstance(cell, str):
-                    # 检查是否为纯占位符（如 {name}）
-                    stripped = cell.strip()
-                    if stripped.startswith('{') and stripped.endswith('}') and stripped.count('{') == 1:
-                        # 纯占位符：直接替换为原始值（保持类型）
-                        key = stripped[1:-1]
-                        if key in kwargs:
-                            actual_row = start_row_num + r
-                            actual_col = num_to_excel_col(start_col_num + c)
-                            range_str = f"{actual_col}{actual_row}:{actual_col}{actual_row}"
-                            ranges_data.append({
-                                "range": range_str,
-                                "values": [[kwargs[key]]]  # 保持原始类型
-                            })
-                    else:
-                        # 混合文本：使用 format（结果为字符串）
-                        try:
-                            formatted_value = cell.format(**kwargs)
-                            if formatted_value != cell:
-                                actual_row = start_row_num + r
-                                actual_col = num_to_excel_col(start_col_num + c)
-                                range_str = f"{actual_col}{actual_row}:{actual_col}{actual_row}"
-                                ranges_data.append({
-                                    "range": range_str,
-                                    "values": [[formatted_value]]
-                                })
-                        except (KeyError, ValueError):
-                            # 格式化失败，跳过
-                            pass
-
-        # 4. 使用批量写入 API 更新所有需要替换的单元格
-        if ranges_data:
-            self.write_batch(ranges_data)
-
     def insert_column_to_right(
         self,
         column_letter: str,
@@ -528,7 +516,241 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         col_letter = num_to_excel_col(col_index)
         data = read_method(f'{col_letter}2:{col_letter}{self.get_sheet_info()["rowCount"]}')
         return [row[0] for row in data]
-    
+
+    def read_row(
+        self,
+        row_number: int,
+        full_row: bool = False,
+        read_method: Callable[str, List[List[Any]]] = None
+    ) -> Dict[str, Any]:
+        """
+        读取指定单行的数据，返回字典格式。
+
+        注意：此方法只读取单行数据，不支持行范围读取。
+        如需读取多行，请使用 read() 方法读取范围，或使用 iterrows() 方法流式读取。
+
+        根据 full_row 参数决定读取整行还是只读取和表头等长的数据：
+        - full_row=False（默认）: 只读取和表头等长的列数据
+        - full_row=True: 读取整行所有有数据的列
+
+        返回字典的键规则：
+        - 在表头范围内的列：
+          - 如果表头有值（使用 cell_is_blank 检查），使用表头名称作为键
+          - 如果表头为空（None/空字符串/NaN），使用列字母索引作为键（A, B, C, ...）
+        - 超出表头范围的列：使用列字母索引作为键（A, B, C, ...）
+
+        Note:
+            - row_number 从 1 开始计数，只能指定单个行号
+            - 当 row_number=1 时，返回的字典键为列字母索引（因为第一行就是表头）
+            - read_method 参数用于选择不同的读取方式（默认 read_human，可选 read_raw 等）
+
+        Args:
+            row_number: 要读取的行号（从 1 开始，必须是单个行号）
+            full_row: 是否读取整行，False 表示只读和表头等长的列
+            read_method: 读取单元格的方法引用，默认为 read_human
+                - read_human: 人类可读方式（默认）
+                - read_raw: 读取原始数据（含公式）
+                - read: 基础读取方法
+
+        Returns:
+            字典，键为表头名称或列字母索引，值为对应单元格的值
+
+        Example:
+            >>> # 假设表头为 ["姓名", "年龄"]，读取第2行（只读表头范围）
+            >>> sheet.read_row(2)
+            >>> # 返回: {"姓名": "张三", "年龄": 25}
+            >>>
+            >>> # 读取第2行（包含表头范围外的列）
+            >>> sheet.read_row(2, full_row=True)
+            >>> # 返回: {"姓名": "张三", "年龄": 25, "C": "备注", "D": "其他"}
+            >>>
+            >>> # 读取第1行（表头行）
+            >>> sheet.read_row(1)
+            >>> # 返回: {"A": "姓名", "B": "年龄"}
+            >>>
+            >>> # 使用 read_raw 读取公式
+            >>> sheet.read_row(3, read_method=sheet.read_raw)
+            >>> # 返回: {"姓名": "李四", "年龄": "=B2+1"}
+        """
+        if read_method is None:
+            read_method = self.read_human
+
+        # 获取表格信息
+        sheet_info = self.get_sheet_info()
+        total_columns = sheet_info["columnCount"]
+
+        # 确定读取的列范围
+        if full_row:
+            # 读取整行
+            end_col = num_to_excel_col(total_columns)
+        else:
+            # 只读和表头等长的列
+            header_len = len(self.get_header())
+            end_col = num_to_excel_col(header_len)
+
+        # 构造读取范围并读取数据
+        range_str = f"A{row_number}:{end_col}{row_number}"
+        data = read_method(range_str)
+        row_data = data[0] if data else []
+
+        # 构造返回字典
+        result = {}
+
+        if row_number == 1:
+            # 第一行是表头，使用列字母索引作为键
+            for i, value in enumerate(row_data):
+                col_letter = num_to_excel_col(i + 1)
+                result[col_letter] = value
+        else:
+            # 非表头行，使用表头名称或列字母索引作为键
+            header = self.get_header()
+            for i, value in enumerate(row_data):
+                if i < len(header):
+                    # 在表头范围内
+                    header_value = header[i]
+                    if not cell_is_blank(header_value):
+                        # 表头有值，使用表头名称
+                        result[header_value] = value
+                    else:
+                        # 表头为空（None/空字符串/NaN），使用列字母索引
+                        col_letter = num_to_excel_col(i + 1)
+                        result[col_letter] = value
+                else:
+                    # 超出表头范围，使用列字母索引
+                    col_letter = num_to_excel_col(i + 1)
+                    result[col_letter] = value
+
+        return result
+
+    def read_rows(
+        self,
+        row_numbers: List[int],
+        full_row: bool = False,
+        read_method: Callable[str, List[List[Any]]] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        批量读取指定多行的数据，返回字典数组。
+
+        该方法内部使用 read_batch API 一次性读取多个行范围，相比多次调用 read_row 方法性能更高。
+
+        根据 full_row 参数决定读取整行还是只读取和表头等长的数据：
+        - full_row=False（默认）: 只读取和表头等长的列数据
+        - full_row=True: 读取整行所有有数据的列
+
+        返回字典的键规则（与 read_row 一致）：
+        - 在表头范围内的列：
+          - 如果表头有值，使用表头名称作为键
+          - 如果表头为空（None/空字符串/NaN），使用列字母索引作为键（A, B, C, ...）
+        - 超出表头范围的列：使用列字母索引作为键（A, B, C, ...）
+
+        Note:
+            - row_numbers 中的行号从 1 开始计数
+            - 当某行号为 1 时，该行返回的字典键为列字母索引（因为第一行就是表头）
+            - 返回数组的顺序与 row_numbers 的顺序一致
+            - read_method 参数用于选择不同的读取方式（默认 read_human，可选 read_raw 等）
+            - 该接口返回数据的最大限制为 10 MB
+
+        Args:
+            row_numbers: 要读取的行号列表（从 1 开始），例如 [2, 3, 5, 10]
+            full_row: 是否读取整行，False 表示只读和表头等长的列
+            read_method: 读取单元格的方法引用，默认为 read_human
+                - read_human: 人类可读方式（默认）
+                - read_raw: 读取原始数据（含公式）
+                - read: 基础读取方法
+
+        Returns:
+            字典数组，每个字典表示一行数据。
+            字典的键为表头名称或列字母索引，值为对应单元格的值。
+
+        Example:
+            >>> # 假设表头为 ["姓名", "年龄"]，批量读取第2、3、5行
+            >>> sheet.read_rows([2, 3, 5])
+            >>> # 返回: [
+            >>> #     {"姓名": "张三", "年龄": 25},
+            >>> #     {"姓名": "李四", "年龄": 30},
+            >>> #     {"姓名": "王五", "年龄": 28}
+            >>> # ]
+            >>>
+            >>> # 读取包含表头范围外的列
+            >>> sheet.read_rows([2, 3], full_row=True)
+            >>> # 返回: [
+            >>> #     {"姓名": "张三", "年龄": 25, "C": "备注1"},
+            >>> #     {"姓名": "李四", "年龄": 30, "C": "备注2"}
+            >>> # ]
+            >>>
+            >>> # 使用 read_raw 读取公式
+            >>> sheet.read_rows([2, 3], read_method=sheet.read_raw)
+            >>> # 返回: [
+            >>> #     {"姓名": "张三", "年龄": "=B1+1"},
+            >>> #     {"姓名": "李四", "年龄": "=B2+1"}
+            >>> # ]
+        """
+        if not row_numbers:
+            return []
+
+        if read_method is None:
+            read_method = self.read_human
+
+        # 确定读取的列范围
+        # get_header() 内部已有缓存机制且读取的是完整列范围
+        end_col = num_to_excel_col(len(self.get_header()))
+
+        # 构造多个范围字符串
+        ranges = [f"A{row_num}:{end_col}{row_num}" for row_num in row_numbers]
+
+        # 根据 read_method 选择底层调用方式
+        # read_method 是 FeiShuSheet 的方法，内部会调用 FeiShuRequest 的方法
+        # 我们需要直接使用 FeiShuRequest 的 read_batch 方法
+        # 但为了兼容 read_method 参数（可能是 read_human/read_raw/read），
+        # 我们需要判断 value_render_option
+
+        # 根据 read_method 判断使用哪种渲染选项
+        if read_method == self.read_raw:
+            value_render_option = "Formula"
+        else:
+            value_render_option = "ToString"
+
+        # 调用 Operations 层的 read_batch 方法（带权限控制）
+        data = self.read_batch(ranges, value_render_option=value_render_option)
+
+        # 解析返回数据（使用之前缓存的 header）
+        result = []
+
+        for i, value_range in enumerate(data["valueRanges"]):
+            row_data = value_range["values"][0] if value_range.get("values") else []
+            row_number = row_numbers[i]
+
+            # 构造返回字典（与 read_row 逻辑一致）
+            row_dict = {}
+
+            if row_number == 1:
+                # 第一行是表头，使用列字母索引作为键
+                for j, value in enumerate(row_data):
+                    col_letter = num_to_excel_col(j + 1)
+                    row_dict[col_letter] = value
+            else:
+                # 非表头行，使用表头名称或列字母索引作为键
+                header = self.get_header()
+                for j, value in enumerate(row_data):
+                    if j < len(header):
+                        # 在表头范围内
+                        header_value = header[j]
+                        if not cell_is_blank(header_value):
+                            # 表头有值，使用表头名称
+                            row_dict[header_value] = value
+                        else:
+                            # 表头为空（None/空字符串/NaN），使用列字母索引
+                            col_letter = num_to_excel_col(j + 1)
+                            row_dict[col_letter] = value
+                    else:
+                        # 超出表头范围，使用列字母索引
+                        col_letter = num_to_excel_col(j + 1)
+                        row_dict[col_letter] = value
+
+            result.append(row_dict)
+
+        return result
+
     def get_title(self) -> str:
         info = self.get_sheet_info()
         if "title" in info:

@@ -13,7 +13,7 @@ class LinkAttribute(BaseSettings):
         原 url: 'sheets/v2/spreadsheets/{SHEET_TOKEN}/values'
         打印: 'sheets/v2/spreadsheets/*****/values/append_1/append_2'
         ```
-        
+
         :param append_path: 可以向路径后追加额外字符串，用 “/” 分割
         :param format_kwargs: 格式化路径中带有 {} 的占位符
         :return: 返回一个 URL 对象，可使用 .with_query 方式添加路径参数
@@ -41,6 +41,7 @@ class SheetsSettings(BaseSettings):
     target: str
     metainfo: LinkAttribute
     read: LinkAttribute
+    readBatch: LinkAttribute
     insert: LinkAttribute
     write: LinkAttribute
     writeBatch: LinkAttribute
@@ -52,6 +53,7 @@ class SheetsSettings(BaseSettings):
     insertSeries: LinkAttribute
     writeImage: LinkAttribute
     style: LinkAttribute
+    styleBatchUpdate: LinkAttribute
 
 class WorkBookSettings(BaseSettings):
     """控制工作簿"""

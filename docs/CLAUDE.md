@@ -358,3 +358,152 @@ git commit -m "[feat] Your commit message"
 # 5. Push to remote
 git push origin dev
 ```
+
+## Development Best Practices & Lessons Learned
+
+### Adding New Read/Write Methods - Key Points
+
+**1. Method Naming**
+- Single operations use singular form: `read_row`, `read_column`
+- Name must clearly indicate scope (single item vs range)
+- Document limitations explicitly
+
+**2. Parameter Consistency**
+- All read methods should accept `read_method` parameter (default: `read_human`)
+- Type hint: `Callable[str, List[List[Any]]]`
+
+**3. Return Type Design**
+- Use descriptive dictionary keys
+- For missing/None header values: use column letters (A, B, C) via `num_to_excel_col()`
+- Use helper `cell_is_blank()` from `fastfeishu.helpers` to check empty values
+
+**4. Documentation Requirements**
+- Clear description with limitations
+- All parameters with types and defaults
+- Return value structure
+- 2-3 usage examples
+- Reference alternative methods
+
+**5. Testing & README**
+- Write unit tests covering basic + edge cases
+- Update README with usage examples
+- Update API reference section
+
+### Common Pitfalls
+
+1. **Don't break layer architecture**: helpers → models → core → utils
+2. **Check for None/empty in dictionary keys**: Use `cell_is_blank()` helper
+3. **Avoid calling methods multiple times**: Cache results (e.g., `data = read_method()` once)
+4. **Don't skip README updates**: Code without docs is incomplete
+5. **Follow existing patterns**: Check similar methods before implementing
+
+### Quick Reference
+
+```python
+# ✅ Good: Use helper to check empty values
+from fastfeishu.helpers import cell_is_blank
+
+if not cell_is_blank(header_value):
+    result[header_value] = value
+else:
+    result[num_to_excel_col(i + 1)] = value
+
+# ❌ Bad: Direct checks miss edge cases
+if header_value is not None and header_value != '':
+    result[header_value] = value  # Misses NaN, whitespace, etc.
+```
+
+
+1. **Don't break the layer architecture**: Respect the dependency hierarchy (helpers → models → core → utils)
+2. **Don't skip documentation**: Chinese docstrings are required, English inline comments for complex logic
+3. **Don't forget parameter defaults**: Always provide sensible defaults (e.g., `read_method=None` → defaults to `read_human`)
+4. **Don't ignore existing patterns**: Check similar methods before implementing new ones
+5. **Don't skip README updates**: Code without documentation is incomplete
+
+### Implementing Batch API Features - Type System & Configuration
+
+**本次实现批量设置样式功能的关键要点：**
+
+**1. TypedDict 的模块放置原则**
+- 类型定义应放在最相关的模型文件中（如 `StyleRangeData` 在 `cell_style.py`）
+- 避免在 `interface.py` 中定义数据结构，会导致循环导入
+- 在抽象接口中使用字符串引用（forward reference）即可：
+  ```python
+  # interface.py - 推荐方式
+  def set_style(self, style: Union['CellStyle', Dict[str, Any]]): ...
+  def set_styles(self, data: List['StyleRangeData']): ...
+  ```
+- 只有在具体实现中才需要真正导入类型：
+  ```python
+  # operations.py - 具体实现
+  from fastfeishu.models.cell_style import CellStyle, StyleRangeData
+
+  def set_styles(self, data: List[StyleRangeData]):
+      # 实际使用类型
+  ```
+- 避免过度使用 `TYPE_CHECKING`，除非 IDE 类型提示确实有问题
+
+**2. 导入语句必须在文件顶部**
+- ❌ **错误**：在函数内部导入模块
+  ```python
+  def set_styles(self, data):
+      from fastfeishu.helpers import excel_col_to_num  # 错误！
+  ```
+- ✅ **正确**：所有导入在文件开头
+  ```python
+  from fastfeishu.helpers import excel_col_to_num
+  ```
+
+**3. 类型提示应该精确而非泛化**
+- ❌ **避免**：`data: List[Dict[str, Any]]` （Any 太宽泛）
+- ✅ **推荐**：`data: List[StyleRangeData]` 或 `style: Union[CellStyle, Dict[str, Any]]`
+- 即使运行时支持字典，也应通过类型提示引导用户使用强类型对象
+- 在方法内部进行类型检查和转换：
+  ```python
+  if isinstance(style, CellStyle):
+      style = style.to_dict()
+  ```
+
+**4. Pydantic 配置验证的完整性**
+添加新的 API 端点时，需要同步更新三个地方：
+- `properties.yaml` - 添加端点配置
+  ```yaml
+  styleBatchUpdate:
+    url: sheets/v2/spreadsheets/{SHEET_TOKEN}/styles_batch_update
+  ```
+- `feishu_cfg.py` - 在对应的 Settings 类中添加字段
+  ```python
+  class SheetsSettings(BaseSettings):
+      styleBatchUpdate: LinkAttribute
+  ```
+- `request.py` - 实现请求方法
+
+**5. 自定义异常的使用场景**
+- 为特定领域错误创建专门的异常类（如 `FeiShuStyleException`）
+- 提供清晰的错误信息，包括：
+  - 具体的问题描述
+  - 超出的限制值和限制本身
+  - 建议的解决方案
+  ```python
+  raise FeiShuStyleException(
+      f"范围 '{sheet_range}' 的行数 ({rows}) 超过限制 (5000 行)。"
+      f"请将范围拆分为更小的批次。"
+  )
+  ```
+
+**6. 三层架构的职责分离**
+- **Request 层**：处理 HTTP 请求，自动添加 sheet_id 前缀等底层细节
+- **Operations 层**：业务逻辑验证（边界检查、类型转换），调用 `_response_json()` 处理响应
+- **Sheet 层**：用户友好的接口（本实现暂未在此层扩展）
+
+**7. 模块导出的完整性**
+添加新类型后，确保在 `__init__.py` 中导出：
+```python
+from .cell_style import CellStyle, Font, StyleRangeData
+```
+
+**8. 边界检查的实现策略**
+- 先进行所有数据验证，再发送 API 请求
+- 对每个范围单独检查（行数、列数限制）
+- 累计统计（如边框样式的总单元格数）
+- 使用 helper 函数解析范围：`match_row_num_by_range()`, `excel_col_to_num()`

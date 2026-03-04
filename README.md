@@ -2,7 +2,7 @@
 
 [![Python Version](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Test Coverage](https://img.shields.io/badge/coverage-48%25-yellow)](tests/)
+[![Test Coverage](https://img.shields.io/badge/coverage-61%25-yellowgreen)](docs/TESTING.md)
 
 **fastfeishu** 是一个用于与飞书（Lark）Sheets API v3 交互的 Python 包，提供高级接口用于读取、写入和管理电子表格，支持批处理、图片处理和流式读取。
 
@@ -10,7 +10,8 @@
 
 - **[开发者贡献指南](docs/CONTRIBUTING.md)** - 新人必读！一键配置开发环境，了解开发工作流和代码规范
 - **[项目架构指南](docs/CLAUDE.md)** - 详细的架构设计、设计模式和开发模式
-- **[测试指南](tests/README.md)** - 如何编写和运行测试
+- **[测试指南](docs/TESTING.md)** - 单元测试编写指南和最佳实践
+- **[集成测试指南](docs/INTEGRATION_TESTS.md)** - 集成测试编写指南和示例
 - **[GitHub Actions](../../actions)** - 查看 CI/CD 状态
 
 ## 🚀 新人快速开始
@@ -176,6 +177,77 @@ if __name__ == '__main__':
     # 根据列名读取整列数据（从第2行开始）
     column_data = s.read_column('CaseID')
     print(column_data)  # [1, 2, 3, 4, ...]
+```
+
+#### 读取指定行
+
+```python
+from fastfeishu.core import FeiShuSheet
+
+if __name__ == '__main__':
+    s = FeiShuSheet('飞书链接', readonly=True)
+
+    # 读取第2行（默认只读和表头等长的列）
+    # 假设表头为 ["姓名", "年龄"]
+    row_data = s.read_row(2)
+    print(row_data)  # {"姓名": "张三", "年龄": 25}
+
+    # 读取整行（包含表头范围外的列）
+    # 超出表头的列使用列字母索引作为键
+    row_data_full = s.read_row(2, full_row=True)
+    print(row_data_full)  # {"姓名": "张三", "年龄": 25, "C": "备注", "D": "其他"}
+
+    # 读取表头行（第1行）
+    # 使用列字母索引作为键
+    header_row = s.read_row(1)
+    print(header_row)  # {"A": "姓名", "B": "年龄"}
+
+    # 使用 read_raw 读取公式
+    row_with_formula = s.read_row(3, read_method=s.read_raw)
+    print(row_with_formula)  # {"姓名": "李四", "年龄": "=B2+1"}
+
+    # 当表头某列为None或空字符串时，自动使用列字母索引
+    # 假设表头为 ["姓名", None, "", "城市"]
+    row_with_none_header = s.read_row(2)
+    print(row_with_none_header)  # {"姓名": "张三", "B": 25, "C": "测试", "城市": "北京"}
+```
+
+#### 批量读取多行
+
+使用 `read_rows` 方法可以一次性读取多个不连续的行，相比多次调用 `read_row` 性能更高（使用飞书批量读取 API）。
+
+```python
+from fastfeishu.core import FeiShuSheet
+
+if __name__ == '__main__':
+    s = FeiShuSheet('飞书链接', readonly=True)
+
+    # 批量读取第2、3、5行（默认只读和表头等长的列）
+    # 假设表头为 ["姓名", "年龄", "城市"]
+    rows_data = s.read_rows([2, 3, 5])
+    print(rows_data)
+    # [
+    #     {"姓名": "张三", "年龄": 25, "城市": "北京"},
+    #     {"姓名": "李四", "年龄": 30, "城市": "上海"},
+    #     {"姓名": "王五", "年龄": 28, "城市": "广州"}
+    # ]
+
+    # 读取整行（包含表头范围外的列）
+    rows_data_full = s.read_rows([2, 3], full_row=True)
+    print(rows_data_full)
+    # [
+    #     {"姓名": "张三", "年龄": 25, "C": "备注1", "D": "其他1"},
+    #     {"姓名": "李四", "年龄": 30, "C": "备注2", "D": "其他2"}
+    # ]
+
+    # 同时读取表头行和数据行
+    rows_with_header = s.read_rows([1, 2, 3])
+    # 第1行使用列字母索引，其他行使用表头名称
+
+    # 使用 read_raw 读取公式
+    rows_with_formula = s.read_rows([2, 3], read_method=s.read_raw)
+
+    # 注意：该接口返回数据的最大限制为 10 MB
 ```
 
 #### 遍历整张表（流式读取）
@@ -414,6 +486,7 @@ if __name__ == '__main__':
 
 ```python
 from fastfeishu.core import FeiShuSheet
+from fastfeishu.utils.feishu_util import FeiShuUtil
 
 if __name__ == '__main__':
     s = FeiShuSheet('飞书链接')
@@ -429,7 +502,8 @@ if __name__ == '__main__':
     # A4: Hello {name}!       -> 混合文本
     # A5: 价格：{price}元     -> 混合文本
 
-    s.replace_placeholder(
+    FeiShuUtil.replace_placeholder(
+        sheet=s,
         sheet_range='A1:A5',
         name='张三',
         age=25,           # 数字类型
@@ -513,6 +587,98 @@ if __name__ == '__main__':
     # 清除样式
     s.set_style("A1:C3", CellStyle.builder().clean(True).build())
 ```
+
+#### 批量设置单元格样式
+
+使用 `set_styles` 可以一次性为多个范围设置不同的样式，比多次调用 `set_style` 更高效。
+
+```python
+from fastfeishu.core import FeiShuSheet
+from fastfeishu.models import CellStyle, Font
+from fastfeishu.models.cell_style import StyleRangeData
+from typing import List
+
+if __name__ == '__main__':
+    s = FeiShuSheet('飞书链接')
+
+    # 方式1：使用字典（推荐，更灵活）
+    s.set_styles([
+        {
+            "ranges": ["A1:E1"],
+            "style": CellStyle.builder()
+                .font(Font.builder().bold().font_size("14pt/1.5").build())
+                .fore_color("#000000")
+                .back_color("#e6f2ff")
+                .h_align(1)
+                .border_type("FULL_BORDER")
+                .build()
+        },
+        {
+            "ranges": ["C2:C10", "E2:E10"],
+            "style": {
+                "foreColor": "#ffffff",
+                "backColor": "#ff6b6b",
+                "hAlign": 1
+            }
+        }
+    ])
+
+    # 方式2：使用 StyleRangeData 类型（更严格的类型检查）
+    # 适合需要 IDE 类型提示和静态类型检查的场景
+    header_style = CellStyle.builder() \
+        .font(Font.builder().bold().font_size("14pt/1.5").build()) \
+        .fore_color("#000000") \
+        .back_color("#e6f2ff") \
+        .h_align(1) \
+        .v_align(1) \
+        .border_type("FULL_BORDER") \
+        .border_color("#0066cc") \
+        .build()
+
+    highlight_style = CellStyle.builder() \
+        .fore_color("#ffffff") \
+        .back_color("#ff6b6b") \
+        .h_align(1) \
+        .build()
+
+    # 显式声明类型为 List[StyleRangeData]
+    style_data: List[StyleRangeData] = [
+        StyleRangeData(
+            ranges=["A1:E1"],
+            style=header_style
+        ),
+        StyleRangeData(
+            ranges=["C2:C10", "E2:E10"],
+            style=highlight_style
+        ),
+        StyleRangeData(
+            ranges=["A2:B10"],
+            style={
+                "hAlign": 0,
+                "borderType": "FULL_BORDER"
+            }
+        )
+    ]
+    s.set_styles(style_data)
+
+    # 单个样式应用到多个范围
+    common_style = CellStyle.builder() \
+        .back_color("#f0f0f0") \
+        .border_type("FULL_BORDER") \
+        .build()
+
+    s.set_styles([
+        StyleRangeData(
+            ranges=["A1:C3", "E5:G7", "I9:K11"],
+            style=common_style
+        )
+    ])
+```
+
+**使用限制**：
+- 单次设置的范围不可超过 **5000 行 × 100 列**
+- 在设置边框样式时，单次更新的单元格数量不可超过 **30,000 个**
+- 当单元格在多个范围中时，单元格将应用请求体的最后一个样式
 
 **样式属性说明**：
 
@@ -598,6 +764,17 @@ if __name__ == '__main__':
         row_handler=even_insert_handler,
         batch_write=2000  # 批量写入行数
     )
+
+    # 替换占位符（智能类型保持）
+    # 纯占位符（如 {price}）会保持原始类型
+    # 混合文本（如 "价格：{price}元"）会转为字符串
+    FeiShuUtil.replace_placeholder(
+        sheet=source_sheet,
+        sheet_range='A1:A5',
+        name='张三',
+        age=25,
+        price=99.99
+    )
 ```
 
 ### 3.2 自定义数据源
@@ -666,6 +843,8 @@ if __name__ == '__main__':
 - `read_human(sheet_range)` - 人类可读方式读取
 - `read_images(sheet_range)` - 读取图片
 - `read_column(column_name)` - 读取指定列（返回一维数组）
+- `read_row(row_number, full_row=False, read_method=None)` - 读取指定行（返回字典）
+- `read_rows(row_number, full_row=False, read_method=None)` - 批量读取指定多行的数据（返回字典）
 - `iterrows(start_row=2, end_row=None, batch_size=500)` - 流式迭代
 - `get_title()` - 获取标题
 - `get_header()` - 获取表头
@@ -686,9 +865,10 @@ if __name__ == '__main__':
 - `insert_column_to_left(column_letter, insert_number=1)` - 左侧插入列
 
 **高级方法**:
-- `replace_placeholder(sheet_range, **kwargs)` - 替换占位符（智能类型保持）
 - `get_index_by_col_name(col_name)` - 根据列名获取索引
 - `get_letter_by_col_name(col_name)` - 根据列名获取字母
+- `check_columns_exist(col_names)` - 检测列是否存在（返回字典）
+- `has_columns(col_names)` - 检测所有列是否都存在（返回布尔值）
 - `write_batch(value_ranges)` - 批量写入多个范围
 
 **图片方法**:
@@ -701,7 +881,8 @@ if __name__ == '__main__':
 - `create_sheet(title, index=0)` - 创建新Sheet
 - `copy(title)` - 复制当前Sheet
 - `update_sheet_properties(properties)` - 更新Sheet属性
-- `set_style(sheet_range, style)` - 设置样式
+- `set_style(sheet_range, style)` - 设置单个范围的样式
+- `set_styles(data)` - 批量设置多个范围的样式
 
 ## 六、异常处理
 

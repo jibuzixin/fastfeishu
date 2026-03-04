@@ -3,13 +3,14 @@ import requests
 from io import BytesIO
 from typing import Any, Dict, List, Literal, Union, Self
 from fastfeishu.models import SheetProperties, CellStyle
+from fastfeishu.models.cell_style import StyleRangeData
 from yarl import URL
 from pathlib import Path
 from PIL import Image
 
 from fastfeishu.core import FeiShuRequest
-from fastfeishu.exceptions.exception import FeiShuException, FeiShuRequestException
-from fastfeishu.helpers import match_row_num_by_range, base64_image, num_to_excel_col, excel_col_to_num
+from fastfeishu.exceptions.exception import FeiShuException, FeiShuRequestException, FeiShuStyleException
+from fastfeishu.helpers import match_row_num_by_range, match_col_letter_by_range, base64_image, num_to_excel_col, excel_col_to_num
 
 
 def _response_json(response: requests.Response) -> Dict[str, Any]:
@@ -302,6 +303,101 @@ class FeiShuSheetOperations:
         response = self._request.set_style(sheet_range, style)
         _response_json(response)
 
+    def set_styles(self, data: List[StyleRangeData]):
+        """
+        批量设置单元格样式，支持为多个范围设置不同的样式。
+
+        [飞书 API 文档](https://open.feishu.cn/document/server-docs/docs/sheets-v3/data-operation/batch-set-cell-style)
+
+        Note:
+            - 单次设置的范围不可超过 5000 行 × 100 列
+            - 在设置边框样式时，单次更新的单元格数量不可超过 30,000 个
+            - 当单元格在多个范围中时，单元格将应用请求体的最后一个样式
+
+        Args:
+            data: 样式设置数据列表，每个元素包含 ranges 和 style 字段
+                - ranges (List[str]): 单元格范围列表，如 ["A1:B2", "C3:D4"]
+                - style (Union[CellStyle, Dict[str, Any]]): 样式对象或样式字典
+
+        Examples:
+            >>> # 使用 Builder 模式创建样式
+            >>> style = CellStyle.builder() \\
+            ...     .font(Font.builder().bold().font_size("12pt/1.5").build()) \\
+            ...     .fore_color("#000000") \\
+            ...     .back_color("#ffff00") \\
+            ...     .build()
+            >>>
+            >>> sheet.set_styles([
+            ...     {
+            ...         "ranges": ["A1:C3", "E5:G7"],
+            ...         "style": style
+            ...     },
+            ...     {
+            ...         "ranges": ["B2:D4"],
+            ...         "style": {
+            ...             "font": {"bold": True},
+            ...             "foreColor": "#ff0000"
+            ...         }
+            ...     }
+            ... ])
+        """
+        self._deny_if_readonly()
+
+        # 边界检查
+        total_cells = 0
+        has_border_style = False
+
+        for item in data:
+            ranges = item["ranges"]
+            style = item["style"]
+
+            # 如果是 CellStyle 对象，转为字典
+            if isinstance(style, CellStyle):
+                style = style.to_dict()
+                item["style"] = style
+
+            # 检查是否有边框样式
+            if "borderType" in style and style["borderType"] != "NO_BORDER":
+                has_border_style = True
+
+            # 计算每个范围的单元格数量
+            for sheet_range in ranges:
+                # 解析范围
+                start_row_str, end_row_str = match_row_num_by_range(sheet_range)
+                start_col_letter, end_col_letter = match_col_letter_by_range(sheet_range)
+
+                start_row = int(start_row_str)
+                end_row = int(end_row_str)
+                start_col = excel_col_to_num(start_col_letter)
+                end_col = excel_col_to_num(end_col_letter)
+
+                rows = abs(end_row - start_row) + 1
+                cols = abs(end_col - start_col) + 1
+
+                # 检查单个范围不超过 5000 行 × 100 列
+                if rows > 5000:
+                    raise FeiShuStyleException(
+                        f"范围 '{sheet_range}' 的行数 ({rows}) 超过限制 (5000 行)。"
+                        f"请将范围拆分为更小的批次。"
+                    )
+                if cols > 100:
+                    raise FeiShuStyleException(
+                        f"范围 '{sheet_range}' 的列数 ({cols}) 超过限制 (100 列)。"
+                        f"请将范围拆分为更小的批次。"
+                    )
+
+                total_cells += rows * cols
+
+        # 如果有边框样式，检查总单元格数不超过 30,000
+        if has_border_style and total_cells > 30000:
+            raise FeiShuStyleException(
+                f"设置边框样式时，总单元格数 ({total_cells}) 超过限制 (30,000 个)。"
+                f"请减少范围或移除边框样式设置。"
+            )
+
+        response = self._request.set_styles_batch_update(data)
+        _response_json(response)
+
     # -------------------------------------- 读操作 --------------------------------------------
 
     def read(
@@ -331,6 +427,40 @@ class FeiShuSheetOperations:
         """
         response = self._request.read(sheet_range, value_render_option, date_time_render_option)
         return _response_json(response)["data"]["valueRange"]["values"]
+
+    def read_batch(
+        self,
+        ranges: List[str],
+        value_render_option: str = "ToString",
+        date_time_render_option: str = "FormattedString"
+    ) -> Dict[str, Any]:
+        """
+        [读取多个范围](https://open.feishu.cn/document/server-docs/docs/sheets-v3/data-operation/reading-multiple-ranges)
+
+        批量读取电子表格中多个指定范围的数据。该接口返回数据的最大限制为 10 MB。
+
+        Args:
+            ranges: 要读取的范围列表，例如 ["A1:B2", "D5:E10"]
+            value_render_option: 指定单元格数据的格式。可选值如下所示。当参数缺省时，默认不进行公式计算，返回公式本身，且单元格为数值格式。
+                - ToString: 返回纯文本的值（数值类型除外）
+                - Formula: 单元格中含有公式时，返回公式本身
+                - FormattedValue: 计算并格式化单元格
+                - UnformattedValue: 计算但不对单元格进行格式化
+            date_time_render_option: 指定数据类型为日期、时间、或时间日期的单元格数据的格式。
+                - 若不传值，默认返回浮点数值
+                - 可选值为 FormattedString，此时接口将计算并对日期、时间、或时间日期类型的数据格式化并返回格式化后的字符串
+
+        Returns:
+            包含多个范围数据的字典，格式为:
+            {
+                "valueRanges": [
+                    {"range": "sheet1!A1:B2", "values": [[...], [...]]},
+                    {"range": "sheet1!D5:E10", "values": [[...], [...]]}
+                ]
+            }
+        """
+        response = self._request.read_batch(ranges, value_render_option, date_time_render_option)
+        return _response_json(response)["data"]
 
     def read_images(self, sheet_range) -> List[List[Any]]:
         response = self._request.read_images(sheet_range)

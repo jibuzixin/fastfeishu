@@ -15,3 +15,8 @@ class FeiShuColumnNotExist(FeiShuException):
     """飞书列不存在"""
     def __init__(self, column_name: str | List[str], message="飞书列不存在"):
         super().__init__(f"[{column_name}] {message}")
+
+class FeiShuStyleException(FeiShuException):
+    """飞书样式格式错误异常"""
+    def __init__(self, message="飞书样式格式错误"):
+        super().__init__(message)
