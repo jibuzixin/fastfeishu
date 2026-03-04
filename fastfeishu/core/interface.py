@@ -82,9 +82,6 @@ class FeiShuInterface(abc.ABC):
     ) -> Generator[Union[dict[str, Any], pd.Series], None, None]: ...
 
     @abc.abstractmethod
-    def replace_placeholder(self, sheet_range: str, **kwargs): ...
-
-    @abc.abstractmethod
     def insert_column_to_right(
             self,
             column_letter: str,

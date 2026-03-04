@@ -486,6 +486,7 @@ if __name__ == '__main__':
 
 ```python
 from fastfeishu.core import FeiShuSheet
+from fastfeishu.utils.feishu_util import FeiShuUtil
 
 if __name__ == '__main__':
     s = FeiShuSheet('飞书链接')
@@ -501,7 +502,8 @@ if __name__ == '__main__':
     # A4: Hello {name}!       -> 混合文本
     # A5: 价格：{price}元     -> 混合文本
 
-    s.replace_placeholder(
+    FeiShuUtil.replace_placeholder(
+        sheet=s,
         sheet_range='A1:A5',
         name='张三',
         age=25,           # 数字类型
@@ -670,6 +672,17 @@ if __name__ == '__main__':
         row_handler=even_insert_handler,
         batch_write=2000  # 批量写入行数
     )
+
+    # 替换占位符（智能类型保持）
+    # 纯占位符（如 {price}）会保持原始类型
+    # 混合文本（如 "价格：{price}元"）会转为字符串
+    FeiShuUtil.replace_placeholder(
+        sheet=source_sheet,
+        sheet_range='A1:A5',
+        name='张三',
+        age=25,
+        price=99.99
+    )
 ```
 
 ### 3.2 自定义数据源
@@ -760,9 +773,10 @@ if __name__ == '__main__':
 - `insert_column_to_left(column_letter, insert_number=1)` - 左侧插入列
 
 **高级方法**:
-- `replace_placeholder(sheet_range, **kwargs)` - 替换占位符（智能类型保持）
 - `get_index_by_col_name(col_name)` - 根据列名获取索引
 - `get_letter_by_col_name(col_name)` - 根据列名获取字母
+- `check_columns_exist(col_names)` - 检测列是否存在（返回字典）
+- `has_columns(col_names)` - 检测所有列是否都存在（返回布尔值）
 - `write_batch(value_ranges)` - 批量写入多个范围
 
 **图片方法**:

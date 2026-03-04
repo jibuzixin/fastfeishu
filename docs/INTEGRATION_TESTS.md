@@ -320,6 +320,7 @@ class TestIterrows:
 
 import pytest
 from fastfeishu import FeiShuSheet
+from fastfeishu.utils.feishu_util import FeiShuUtil
 
 
 @pytest.mark.integration
@@ -332,7 +333,7 @@ class TestReplacePlaceholder:
         clean_sheet.write("A1:B1", [["{name}", "{age}"]])
 
         # 替换
-        clean_sheet.replace_placeholder("A1:B1", name="Alice", age=30)
+        FeiShuUtil.replace_placeholder(clean_sheet, "A1:B1", name="Alice", age=30)
 
         # 验证（使用 UnformattedValue 读取原始类型）
         result = clean_sheet.read("A1:B1", value_render_option="UnformattedValue")
@@ -345,7 +346,7 @@ class TestReplacePlaceholder:
         clean_sheet.write("A1:A1", [["Hello {name}, you are {age} years old"]])
 
         # 替换
-        clean_sheet.replace_placeholder("A1:A1", name="Bob", age=25)
+        FeiShuUtil.replace_placeholder(clean_sheet, "A1:A1", name="Bob", age=25)
 
         # 验证
         result = clean_sheet.read_human("A1:A1")
