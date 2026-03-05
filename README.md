@@ -252,25 +252,92 @@ if __name__ == '__main__':
 
 #### 遍历整张表（流式读取）
 
+使用 `iterrows` 方法可以流式读取飞书表格，内存安全，适合处理大型数据集。
+
 ```python
 from fastfeishu.core import FeiShuSheet
 
 if __name__ == '__main__':
     s = FeiShuSheet('飞书链接', readonly=True)
 
-    # 默认从第2行开始，每次读取500行
-    for row in s.iterrows():
-        print(row['CaseID'], row['query'], row['预期APIINFO'])
+    # 基础用法：默认从第2行开始，每次读取500行，返回字典格式
+    for index, row in s.iterrows():
+        print(index, row['CaseID'], row['query'], row['预期APIINFO'])
 
-    # 自定义起始行、结束行、批次大小
-    for row in s.iterrows(start_row=5, end_row=100, batch_size=1000):
-        print(row)
+    # 完整参数演示
+    for index, row in s.iterrows(
+        start_row=5,           # 起始行号（含），默认 2
+        end_row=100,           # 结束行号（含），默认 None（读到最后）
+        batch_size=1000,       # 每次读取行数，默认 500
+        return_type=dict,      # 返回类型：dict 或 list，默认 dict
+        columns=None,          # 指定读取的列，默认 None（所有列）
+        read_method=s.read_human  # 读取方法引用，默认 read_human
+    ):
+        print(index, row)
 
-    # 上述默认读取的单元格内容为适合人类阅读的
-    # 更改 read_method 方法引用为 read_raw 可以读取原始单元格的值（比如带文本的链接、公式表达式）
-    for row in s.iterrows(read_method=s.read_raw):
-        print(row)
+    # 示例1：只读取指定列（节省带宽和内存）
+    # 当表格列很多但只需要少数几列时，强烈推荐使用此功能
+    for index, row in s.iterrows(columns=['CaseID', 'query']):
+        print(index, row['CaseID'], row['query'])
+        # 只传输这两列的数据，大幅减少网络流量和内存占用
+
+    # 示例2：使用列字母索引
+    for index, row in s.iterrows(columns=['A', 'B', 'D']):
+        print(index, row)  # row 是 {'A': val1, 'B': val2, 'D': val3}
+
+    # 示例3：从第1行开始（包含表头），使用列字母索引
+    for index, row in s.iterrows(start_row=1, return_type=dict):
+        # 当 start_row=1 且 return_type=dict 时，表头使用列字母索引 A, B, C...
+        print(index, row['A'], row['B'])  # 第1行会返回 {"A": "姓名", "B": "年龄"}
+
+    # 示例4：返回列表格式（不使用表头映射）
+    for index, row in s.iterrows(return_type=list):
+        print(index, row[0], row[1])  # 直接使用索引访问
+
+    # 示例5：读取原始数据（公式、带文本链接等）
+    for index, row in s.iterrows(read_method=s.read_raw):
+        # read_raw 可以获取公式表达式、链接的原始数据
+        print(index, row['公式列'])  # 会显示 "=A1+B1" 而不是计算结果
+
+    # 示例6：处理大数据集（指定结束行，优化批次大小）
+    for index, row in s.iterrows(
+        start_row=2,
+        end_row=10000,       # 只处理前1万行
+        batch_size=2000,     # 增大批次可以减少API调用次数
+        columns=['关键列1', '关键列2']  # 只读需要的列
+    ):
+        # 处理数据...
+        pass
 ```
+
+**参数说明**：
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `start_row` | `int` | `2` | 数据起始行（含），默认跳过表头从第2行开始 |
+| `end_row` | `Optional[int]` | `None` | 结束行（含），`None` 表示读到最后一行 |
+| `batch_size` | `int` | `500` | 每次读取的行数，根据表格大小可适当调整（范围：100-2000） |
+| `return_type` | `Type[Union[List, Dict]]` | `dict` | 返回类型：`dict` 使用列名访问，`list` 使用索引访问 |
+| `columns` | `Optional[List[str]]` | `None` | 指定要读取的列（列名或列字母），`None` 表示读取所有列 |
+| `read_method` | `Callable` | `None` | 读取方法引用（`read_human`/`read_raw`/`read`），`None` 默认为 `read_human` |
+
+**返回值**：
+- 生成器，每次迭代返回 `(行号, 行数据)` 元组
+- `行号`：当前行在表格中的实际行号（从1开始）
+- `行数据`：根据 `return_type` 返回 `dict` 或 `list`
+
+**使用建议**：
+- 处理小数据集（< 1000行）：`batch_size=500`（默认）
+- 处理大数据集（> 10000行）：`batch_size=1000-2000`
+- **列很多时使用 `columns` 参数**：只读取需要的列，可以大幅减少带宽和内存占用
+  - 例如：表格有 50 列，只需要 3 列，使用 `columns` 可减少 94% 的数据传输
+- 飞书 API 单次返回限制为 10MB，过大的 `batch_size` 可能触发限制
+- 使用 `read_raw` 可以读取公式原始表达式，但解析速度较慢
+
+**性能优化**：
+- `columns` 参数会自动优化读取策略：
+  - 连续列（如 `['A', 'B', 'C']`）：使用单次读取
+  - 离散列（如 `['A', 'D', 'G']`）：使用批量 API 读取多个范围
 
 #### 读取图片
 
@@ -845,7 +912,7 @@ if __name__ == '__main__':
 - `read_column(column_name)` - 读取指定列（返回一维数组）
 - `read_row(row_number, full_row=False, read_method=None)` - 读取指定行（返回字典）
 - `read_rows(row_number, full_row=False, read_method=None)` - 批量读取指定多行的数据（返回字典）
-- `iterrows(start_row=2, end_row=None, batch_size=500)` - 流式迭代
+- `iterrows(start_row=2, end_row=None, batch_size=500, return_type=dict, columns=None, read_method=None)` - 流式迭代
 - `get_title()` - 获取标题
 - `get_header()` - 获取表头
 

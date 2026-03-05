@@ -10,6 +10,167 @@
 
 ---
 
+## 🚀 快速开始
+
+### 步骤 1: 创建测试表格
+
+1. 访问 https://feishu.cn
+2. 创建新的电子表格，命名为"FastFeishu 集成测试"
+3. 设置基本表头（如：CaseID、query、result 等）
+4. 复制表格 URL
+
+### 步骤 2: 配置环境变量
+
+```bash
+# 方式1: 复制 .env.example 并填入实际值（推荐）
+cp .env.example .env
+
+# 编辑 .env 文件
+vi .env
+```
+
+在 `.env` 文件中填入：
+
+```bash
+# 飞书应用凭证（必需）
+FS_APP_ID=cli_xxx
+FS_APP_SECRET=xxx
+
+# 主测试表格（必需，用于大部分测试）
+FS_TEST_MAIN_URL=https://li.feishu.cn/sheets/YOUR_SHEET_TOKEN?sheet=YOUR_SHEET_ID
+
+# 其他测试表格（可选）
+FS_TEST_BATCH_OPERATIONS_URL=https://li.feishu.cn/sheets/...
+FS_TEST_LARGE_DATASET_URL=https://li.feishu.cn/sheets/...
+FS_TEST_READONLY_URL=https://li.feishu.cn/sheets/...
+```
+
+**方式2: 直接设置环境变量**
+
+```bash
+export FS_APP_ID="cli_xxx"
+export FS_APP_SECRET="xxx"
+export FS_TEST_MAIN_URL="https://li.feishu.cn/sheets/YOUR_SHEET_TOKEN?sheet=YOUR_SHEET_ID"
+```
+
+### 步骤 3: 查看配置状态
+
+```bash
+# 运行配置检查脚本
+python tests/integration/config.py
+```
+
+输出示例：
+```
+============================================================
+可用的测试表格：
+============================================================
+
+main - ✅ 已配置
+  描述: 主要测试表格，用于大部分读写测试
+  环境变量: FS_TEST_MAIN_URL
+  URL: https://li.feishu.cn/sheets...
+
+batch_operations - ❌ 未配置
+  描述: 批量操作测试表格，用于测试批量写入、批量读取等
+  环境变量: FS_TEST_BATCH_OPERATIONS_URL
+```
+
+### 步骤 4: 运行集成测试
+
+```bash
+# 运行所有集成测试
+pytest tests/integration -v -m integration
+
+# 运行单个测试文件
+pytest tests/integration/test_iterrows_columns.py -v
+
+# 运行单个测试类
+pytest tests/integration/test_iterrows_columns.py::TestIterrowsColumns -v
+
+# 跳过慢速测试
+pytest tests/integration -v -m "integration and not slow"
+```
+
+---
+
+## 📋 测试表格配置管理
+
+### 配置架构
+
+项目使用统一的配置管理系统：
+
+```
+.env                           # 环境变量配置（本地，不提交到 git）
+.env.example                   # 配置模板（提交到 git）
+tests/integration/config.py    # 配置管理模块
+tests/conftest.py              # Pytest fixtures
+```
+
+### 可用的测试表格类型
+
+| 表格名称 | 环境变量 | 用途 |
+|---------|---------|------|
+| `main` | `FS_TEST_MAIN_URL` | 主要测试表格，用于大部分读写测试 |
+| `batch_operations` | `FS_TEST_BATCH_OPERATIONS_URL` | 批量操作测试 |
+| `large_dataset` | `FS_TEST_LARGE_DATASET_URL` | 大数据集测试（建议1000+行） |
+| `readonly` | `FS_TEST_READONLY_URL` | 只读模式测试 |
+
+### 在测试中使用配置
+
+#### 方式1: 直接使用（推荐）
+
+大部分测试应该直接从 config 获取 URL：
+
+```python
+import pytest
+from fastfeishu.core import FeiShuSheet
+from tests.integration.config import get_test_sheet_url
+
+
+@pytest.mark.integration
+class TestMyFeature:
+    """我的功能测试"""
+
+    def test_read_data(self):
+        """直接获取 URL 并创建 sheet 对象"""
+        url = get_test_sheet_url("main")
+        sheet = FeiShuSheet(url, readonly=True)
+
+        result = sheet.read('A1:A10')
+        assert len(result) > 0
+
+    def test_batch_operations(self):
+        """使用不同的测试表格"""
+        url = get_test_sheet_url("batch_operations")
+        sheet = FeiShuSheet(url)
+        # 执行批量操作测试...
+```
+
+#### 方式2: 使用 clean_sheet fixture（需要自动清理时）
+
+只有需要自动清理数据的测试才使用 fixture：
+
+```python
+@pytest.mark.integration
+def test_write_data(clean_sheet):
+    """clean_sheet 会在测试前后自动清理数据"""
+    clean_sheet.write_row([{"name": "test"}], write_row=2)
+    result = clean_sheet.read('A2:A2')
+    assert result[0][0] == "test"
+    # 测试后自动清理
+```
+
+### 可用的 Fixtures
+
+| Fixture 名称 | 类型 | 说明 |
+|-------------|------|------|
+| `clean_sheet` | `FeiShuSheet` | 自动清理数据的测试表格（测试前后自动清空） |
+
+**注意：** 大部分测试应该直接使用 `get_test_sheet_url("main")`，只有需要自动清理时才使用 `clean_sheet` fixture。
+
+---
+
 ## 🎯 需要集成测试的功能
 
 ### 1. 写入操作（高优先级 🔥）
@@ -91,7 +252,7 @@ markers =
 
 ```bash
 # 运行所有集成测试
-pytest tests/integration -v -m integration
+PYTHONPATH=. pytest tests/integration -v -m integration
 
 # 运行特定文件
 pytest tests/integration/test_write_operations.py -v

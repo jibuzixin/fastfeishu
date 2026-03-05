@@ -17,16 +17,25 @@ import requests
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_env():
-    """自动设置测试环境变量"""
-    os.environ["FS_APP_ID"] = "test_app_id"
-    os.environ["FS_APP_SECRET"] = "test_app_secret"
+    """
+    自动设置测试环境变量（仅用于单元测试）
+
+    如果环境变量已存在（如集成测试配置了真实值），则不覆盖。
+    """
+    # 只有当环境变量不存在时才设置假值（用于单元测试）
+    if "FS_APP_ID" not in os.environ:
+        os.environ["FS_APP_ID"] = "test_app_id"
+
+    if "FS_APP_SECRET" not in os.environ:
+        os.environ["FS_APP_SECRET"] = "test_app_secret"
+
     yield
     # 清理可以在这里进行
 
 
 @pytest.fixture
 def feishu_url():
-    """提供测试用的飞书URL"""
+    """提供测试用的飞书URL（单元测试用）"""
     return "https://li.feishu.cn/sheets/TestToken123?sheet=TestSheet456"
 
 
@@ -40,6 +49,60 @@ def sheet_token():
 def sheet_id():
     """提供测试用的 sheet id"""
     return "TestSheet456"
+
+
+# ================================
+# 集成测试专用 Fixtures
+# ================================
+#
+# 大多数测试应该直接使用：
+#   from tests.integration.config import get_test_sheet_url
+#   url = get_test_sheet_url("main")
+#   sheet = FeiShuSheet(url)
+#
+# 只有需要自动清理数据的测试才使用 clean_sheet fixture
+
+@pytest.fixture
+def clean_sheet():
+    """
+    提供一个干净的测试表格（每次测试前清空数据）
+
+    这个 fixture 会自动清理数据，适合需要干净环境的测试。
+    如果表格未配置，测试会自动跳过。
+
+    示例：
+        def test_write(clean_sheet):
+            clean_sheet.write_row([{"name": "test"}], write_row=2)
+            # 测试后会自动清理数据
+    """
+    from fastfeishu.core import FeiShuSheet
+    from tests.integration.config import get_test_sheet_url
+
+    try:
+        url = get_test_sheet_url("main")
+    except ValueError as e:
+        pytest.skip(f"集成测试表格未配置: {e}")
+
+    sheet = FeiShuSheet(url)
+
+    # 测试前：清空所有数据行（保留表头）
+    try:
+        info = sheet.get_sheet_info()
+        if info["rowCount"] > 1:
+            sheet.delete_series(2, info["rowCount"], "ROWS")
+    except Exception:
+        # 如果清理失败（如表格为空），继续执行
+        pass
+
+    yield sheet
+
+    # 测试后：再次清理
+    try:
+        info = sheet.get_sheet_info()
+        if info["rowCount"] > 1:
+            sheet.delete_series(2, info["rowCount"], "ROWS")
+    except Exception:
+        pass
 
 
 # ================================

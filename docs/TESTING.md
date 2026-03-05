@@ -58,6 +58,11 @@ pip install -r requirements.txt
 ### 2. 运行所有测试
 
 ```bash
+# 运行所有单元测试和集成测试
+PYTHONPATH=. pytest tests/ -v
+```
+
+```bash
 # 运行所有单元测试（推荐）
 pytest tests/unit -v -m unit
 

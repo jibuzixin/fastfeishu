@@ -764,7 +764,7 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         end_row: Optional[int] = None,
         batch_size: int = 500,
         return_type: Type[Union[List[Any], Dict[str, Any]]] = dict,
-        header: Optional[List[str]] = None,  # 自定义表头
+        columns: Optional[List[str]] = None,  # 指定读取的列
         read_method: Callable[str, List[List[Any]]] = None,
     ) -> Generator[Union[tuple[int, dict[str, Any]], tuple[int, list[Any]]], None, None]:
         """
@@ -777,26 +777,33 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
             - 如果 start_row >= 2 且 return_type=dict，则返回 dict，第一行作为表头。
             - 如果 start_row == 1 且 return_type=dict，则返回 dict，表头使用 Excel 列字母索引。
             - 如果 return_type=list，则返回 list，没有表头。
-            - 用户可以通过 header 参数自定义表头。
+            - columns 参数可以指定读取哪些列，支持列名或列字母索引，大幅减少数据传输量。
             - read_method 方法引用是为了满足不同的读单元表格内容
 
         Example:
+            >>> # 读取所有列
             >>> for index, row in sheet.iterrows(start_row=2):
             >>>     print(index, row["姓名"], row["年龄"])  # dict 模式
+            >>>
+            >>> # 只读取指定列（节省带宽和内存）
+            >>> for index, row in sheet.iterrows(columns=["CaseID", "query"]):
+            >>>     print(index, row["CaseID"], row["query"])
+            >>>
+            >>> # 使用列字母索引
+            >>> for index, row in sheet.iterrows(columns=["A", "B", "D"]):
+            >>>     print(index, row)
+            >>>
+            >>> # list 模式
             >>> for index, row in sheet.iterrows(start_row=1, return_type=list):
-            >>>     print(index, row[0], row[1])          # list 模式
-            >>> for index, row in sheet.iterrows(start_row=1, return_type=dict):
-            >>>     print(index, row["A"], row["B"])      # dict 模式，使用 Excel 列字母索引
-            >>> for index, row in sheet.iterrows(start_row=1, return_type=dict, header=["姓名", "年龄"]):
-            >>>     print(index, row["姓名"], row["年龄"])  # dict 模式，自定义表头
+            >>>     print(index, row[0], row[1])
 
         Args:
             start_row: 数据起始行（含），默认 2（跳过表头）
             end_row: 结束行（含），None 表示读到最后
             batch_size: 每次读取行数，默认 500
             return_type: 返回类型，可以是 list 或 dict，默认 dict
-            header: 自定义表头，可选
-            read_method: 读取 sheet 单元格的方法引用，可以是此类方法的 read, read_huamn（默认）, read_raw（可以返回公式）
+            columns: 指定要读取的列，支持列名（如 'CaseID'）或列字母（如 'A'），None 表示读取所有列
+            read_method: 读取 sheet 单元格的方法引用，可以是此类方法的 read, read_human（默认）, read_raw（可以返回公式）
 
         Returns:
             生成器，每行是 (索引, 数据) 元组，数据为 dict 或 list
@@ -812,22 +819,92 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
             print(f"警告: 开始处理行 start_row ({start_row}) 比现有数据行数 max_row ({max_row}) 更大. 没有行数据可处理")
             return
 
-        if header is None and return_type == dict:
+        # 确定要读取的列和对应的表头
+        full_header = None
+        if return_type == dict or columns is not None:
             if start_row >= 2:
-                header = self.get_header()
+                full_header = self.get_header()
             else:
-                header = [num_to_excel_col(i + 1) for i in range(info["columnCount"])]  # 使用 Excel 列字母索引作为表头
+                full_header = [num_to_excel_col(i + 1) for i in range(info["columnCount"])]
+
+        # 处理 columns 参数：计算要读取的列索引和对应的表头
+        if columns is None:
+            # 读取所有列
+            col_indices = list(range(1, info["columnCount"] + 1))
+            selected_header = full_header if full_header else []
+            col_letters = [num_to_excel_col(i) for i in col_indices]
+        else:
+            # 只读取指定列
+            col_indices = []
+            selected_header = []
+
+            for col in columns:
+                if isinstance(col, str) and col.isalpha() and col.isupper():
+                    # 列字母（如 'A', 'B', 'AA'）
+                    col_idx = excel_col_to_num(col)
+                    col_indices.append(col_idx)
+                    if full_header and col_idx <= len(full_header):
+                        selected_header.append(full_header[col_idx - 1])
+                    else:
+                        selected_header.append(col)
+                else:
+                    # 列名（如 'CaseID', 'query'）
+                    col_idx = self.get_index_by_col_name(col)
+                    col_indices.append(col_idx)
+                    selected_header.append(col)
+
+            col_letters = [num_to_excel_col(i) for i in col_indices]
+
+        # 优化读取策略：判断列是否连续
+        is_continuous = len(col_indices) > 1 and all(
+            col_indices[i] + 1 == col_indices[i + 1] for i in range(len(col_indices) - 1)
+        )
 
         current_row = start_row
 
         while current_row <= max_row:
             batch_end = min(current_row + batch_size - 1, max_row)
-            range_str = f"A{current_row}:{num_to_excel_col(info['columnCount'])}{batch_end}"
 
             try:
-                batch_data = read_method(range_str)
+                if columns is None:
+                    # 读取所有列（原有逻辑）
+                    range_str = f"A{current_row}:{num_to_excel_col(info['columnCount'])}{batch_end}"
+                    batch_data = read_method(range_str)
+                elif is_continuous:
+                    # 连续列：使用单个范围读取
+                    start_col = col_letters[0]
+                    end_col = col_letters[-1]
+                    range_str = f"{start_col}{current_row}:{end_col}{batch_end}"
+                    batch_data = read_method(range_str)
+                else:
+                    # 离散列：使用 read_batch 读取多个单列范围
+                    ranges = [f"{col}{current_row}:{col}{batch_end}" for col in col_letters]
+
+                    # 根据 read_method 选择合适的 value_render_option
+                    if read_method == self.read_raw:
+                        value_render_option = "Formula"
+                    else:
+                        value_render_option = "ToString"
+
+                    batch_result = self.read_batch(ranges, value_render_option=value_render_option)
+
+                    # 将 read_batch 的结果转换为标准格式
+                    # batch_result["valueRanges"] 是一个数组，每个元素对应一个列范围
+                    batch_data = []
+                    num_rows = len(batch_result["valueRanges"][0].get("values", []))
+
+                    for row_idx in range(num_rows):
+                        row = []
+                        for col_range in batch_result["valueRanges"]:
+                            values = col_range.get("values", [])
+                            if row_idx < len(values) and len(values[row_idx]) > 0:
+                                row.append(values[row_idx][0])
+                            else:
+                                row.append(None)
+                        batch_data.append(row)
+
             except Exception as e:
-                raise FeiShuException(f"读取行 {current_row}~{batch_end} 失败，范围: {range_str}, 错误: {e}")
+                raise FeiShuException(f"读取行 {current_row}~{batch_end} 失败，错误: {e}")
 
             if not batch_data:
                 break
@@ -840,8 +917,8 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
 
                 if return_type == dict:
                     # dict 模式：字段名访问，补空对齐
-                    padded = (row_values + [""] * len(header))[: len(header)]
-                    yield current_row, dict(zip(header, padded))
+                    padded = (row_values + [""] * len(selected_header))[: len(selected_header)]
+                    yield current_row, dict(zip(selected_header, padded))
                 else:
                     # list 模式：直接返回行数据
                     yield current_row, row_values
