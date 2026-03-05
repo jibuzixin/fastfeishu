@@ -380,6 +380,39 @@ git push origin dev
 - Unit tests (basic + edge cases)
 - Update README + API reference
 
+### Optimizing Iterator Methods
+
+**重构 iterrows 增加列选择功能的经验**：
+
+**参数设计决策：**
+- ✅ 使用 `columns` 替代 `header`：语义更清晰（选择列 vs 重命名列）
+- ✅ 支持列名和列字母混用：`columns=['CaseID', 'A', 'query']`
+- ✅ 不考虑向后兼容：直接移除低使用率参数（`header` 仅在文档示例中出现1次）
+
+**性能优化策略（按列分布自动选择）：**
+```python
+# 策略1：所有列（columns=None）
+range_str = f"A{row}:Z{row}"  # 单次读取
+
+# 策略2：连续列（columns=['A', 'B', 'C']）
+range_str = f"A{row}:C{row}"  # 单次读取
+
+# 策略3：离散列（columns=['A', 'D', 'G']）
+ranges = [f"A{row}:A{row}", f"D{row}:D{row}", f"G{row}:G{row}"]
+batch_result = self.read_batch(ranges)  # 批量 API
+```
+
+**实现要点：**
+1. 列解析支持两种格式：列名（通过 `get_index_by_col_name`）、列字母（通过 `excel_col_to_num`）
+2. 判断连续性：`all(indices[i]+1 == indices[i+1] for i in range(len(indices)-1))`
+3. read_batch 结果转换：`valueRanges` 数组按列拼接成行数据
+4. 表头自动映射：根据 `columns` 从 `full_header` 中提取对应列名
+
+**文档重点：**
+- 参数表格必须包含 `columns` 参数说明
+- 示例展示列选择的性能优势（如：50列表格只读3列，减少94%数据传输）
+- 说明自动优化策略（连续 vs 离散）
+
 ### Common Pitfalls
 
 ```python
