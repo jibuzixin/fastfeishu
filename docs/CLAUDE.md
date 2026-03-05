@@ -35,17 +35,12 @@ pip install -e .
 Create `.env` file in project root:
 - `FS_APP_ID` - Feishu application ID
 - `FS_APP_SECRET` - Feishu application secret
-- `OiS_REGION` - OiS3 region (optional)
-- `OiS_IDAAS_CLIENT_ID` - OiS3 IDaaS client ID (optional)
-- `OiS_IDAAS_CLIENT_SECRET` - OiS3 IDaaS client secret (optional)
-- `OiS_IDAAS_SERVICE_ID` - OiS3 IDaaS service ID (optional)
 - `FEISHU_CONFIG` - Custom config file path (optional, defaults to `fastfeishu/configs/properties.yaml`)
 
 ### Running Tests
 ```bash
 # The tests directory contains example usage scripts, not automated tests
 # Run individual test files directly
-python3 tests/test_write_batch.py
 python3 tests/test_write_row_smart.py
 python3 tests/test_heuristic_accuracy.py
 ```
@@ -434,6 +429,83 @@ if header_value is not None and header_value != '':
 2. Cache method results, avoid repeated calls
 3. Follow existing patterns before creating new ones
 4. README updates are mandatory, not optional
+
+### Integration Test Configuration Management
+
+**统一管理集成测试表格链接的完整方案**：
+
+**架构设计：**
+```
+.env                         # 本地配置（不提交 git）
+.env.example                 # 配置模板（提交 git）
+tests/integration/config.py  # 配置管理模块
+tests/conftest.py            # Pytest fixtures
+```
+
+**核心原则：**
+1. **集中管理**：所有测试表格链接在 `config.py` 中统一管理
+2. **环境变量优先**：支持从 `.env` 文件或环境变量读取配置
+3. **类型化配置**：使用 `@dataclass` 定义 `TestSheet` 类型
+4. **自动跳过**：未配置的测试自动跳过（`pytest.skip`）
+5. **多表格支持**：支持多个不同用途的测试表格（main, batch, large_dataset, readonly）
+
+**配置管理模块实现要点：**
+```python
+# config.py
+@dataclass
+class TestSheet:
+    name: str
+    url: str
+    description: str
+
+class IntegrationTestConfig:
+    DEFAULT_SHEETS = {"main": TestSheet(...), "batch": TestSheet(...)}
+
+    @classmethod
+    def get_sheet_url(cls, sheet_name: str) -> str:
+        # 优先级：环境变量 > 默认配置
+        env_key = f"FS_TEST_{sheet_name.upper()}_URL"
+        return os.getenv(env_key) or cls.DEFAULT_SHEETS[sheet_name].url
+```
+
+**Fixtures 设计（简化后）：**
+```python
+# conftest.py - 只保留必要的 fixture
+@pytest.fixture
+def clean_sheet():
+    """自动清理数据的测试表格（只在需要清理时用）"""
+    from tests.integration.config import get_test_sheet_url
+
+    url = get_test_sheet_url("main")
+    sheet = FeiShuSheet(url)
+    # 测试前清理
+    yield sheet
+    # 测试后清理
+```
+
+**测试编写模式（推荐）：**
+```python
+# ✅ 推荐：大部分测试直接获取 URL
+from tests.integration.config import get_test_sheet_url
+
+@pytest.mark.integration
+class TestMyFeature:
+    def test_basic(self):
+        url = get_test_sheet_url("main")
+        sheet = FeiShuSheet(url, readonly=True)
+        result = sheet.read('A1:A10')
+        assert len(result) > 0
+
+    # 只有需要清理时才用 fixture
+    def test_write(self, clean_sheet):
+        clean_sheet.write_row([{"name": "test"}], write_row=2)
+```
+
+**优势：**
+- ✅ 新增测试表格只需在 `config.py` 中添加一项配置
+- ✅ 未配置的测试自动跳过，不会报错
+- ✅ 支持查看配置状态（`python tests/integration/config.py`）
+- ✅ 环境变量覆盖方便 CI/CD 集成
 
 ### Batch API Implementation Pattern
 
