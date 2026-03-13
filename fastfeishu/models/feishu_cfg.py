@@ -60,6 +60,13 @@ class WorkBookSettings(BaseSettings):
     target: str
     create: LinkAttribute
 
+class ExportSettings(BaseSettings):
+    """导出云文档"""
+    target: str
+    createTask: LinkAttribute
+    getTaskResult: LinkAttribute
+    downloadFile: LinkAttribute
+
 # ------------------------- 链接配置 ----------------------------
 class LinksSettings(BaseSettings):
     """所有飞书链接配置"""
@@ -68,6 +75,7 @@ class LinksSettings(BaseSettings):
     media: MediaSettings
     sheets: SheetsSettings
     workBook: WorkBookSettings
+    export: ExportSettings
 
 # --------------------------- 根 --------------------------------
 class FeishuSettings(BaseSettings):
