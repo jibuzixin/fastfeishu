@@ -43,3 +43,11 @@ feishu:
       target: work
       create:
         url: work/v3/spreadsheets
+    export:
+      target: drive
+      createTask:
+        url: drive/v1/export_tasks
+      getTaskResult:
+        url: drive/v1/export_tasks/{TICKET}
+      downloadFile:
+        url: drive/v1/export_tasks/file/{FILE_TOKEN}/download
