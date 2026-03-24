@@ -8,7 +8,7 @@ from requests import Response
 
 from fastfeishu.configs.settings import get_feishu_property
 from fastfeishu.models.type import Formula, FeiShuCellType
-from fastfeishu.helpers import base64_image
+from fastfeishu.helpers import base64_image, extract_filename_from_response
 from fastfeishu.exceptions.exception import FeiShuException
 from fastfeishu.models.feishu_var import FeishuVariable
 from datetime import datetime
@@ -216,14 +216,7 @@ class FeiShuRequest:
         :param sheet_range: 读取表格的范围: 'A2:BC10'
         """
 
-        url = self._build_url(
-            self.link_sheets.read.format(
-                self.sheet_id + "!" + sheet_range.upper(), SHEET_TOKEN=self.sheet_token
-            ).human_repr(),
-        )
-        response = requests.get(url, headers=self._get_request_headers())
-        response.raise_for_status()
-        return response
+        return self.read(sheet_range, value_render_option="Formula", date_time_render_option="FormattedString")
 
     def insert(self, sheet_range: str, data_list: List[List]) -> requests.Response:
         """
@@ -578,8 +571,13 @@ class FeiShuRequest:
         extra: str | None = None,
         chunk_size: int = 8192,
         timeout: int = 30,
-    ) -> bytes:
-        """所有下载方法的底层实现.[文档](https://open.feishu.cn/document/server-docs/docs/drive-v1/media/download)"""
+    ) -> Tuple[str | None, bytes]:
+        """
+        所有下载方法的底层实现.[文档](https://open.feishu.cn/document/server-docs/docs/drive-v1/media/download)
+
+        Return:
+            返回一个元组(文件名.扩展名--可能为 None, 二进制数据)
+        """
         image_down_url = self.link_media.imageDownload.format(FILE_TOKEN=file_token)
         if extra:
             image_down_url = image_down_url.with_query(extra=extra)
@@ -593,20 +591,12 @@ class FeiShuRequest:
         )
         response.raise_for_status()
 
+        filename = extract_filename_from_response(response)
+
         chunks = [
             chunk for chunk in response.iter_content(chunk_size=chunk_size) if chunk
         ]
-        return b"".join(chunks)
-
-    def get_media_content_type(
-        self,
-        file_token: str,
-    ):
-        """发送一个头请求，获取资源类型"""
-        return requests.head(
-            str(self.link_media.download.get_url(FILE_TOKEN=file_token)),
-            headers={"Authorization": f"Bearer {self.tat}"},
-        ).headers.get("content-type", "")
+        return filename, b"".join(chunks)
 
     @staticmethod
     def parse_feishu_url(url: str) -> Tuple[str, str] | Tuple[None, None]:

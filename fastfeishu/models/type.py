@@ -21,9 +21,9 @@ FastFeishu 类型系统 - 建造者模式实现
     # 直接实例化（仍然支持）
     style = SegmentStyle(bold=True, foreColor="#ff0000")
 """
-
+from abc import ABC
 from dataclasses import dataclass, field, asdict
-from typing import List, Optional, Union, Literal
+from typing import List, Optional, Union, Literal, Any
 from datetime import datetime, date
 import re
 
@@ -32,8 +32,8 @@ import re
 # 基础类
 # ============================================================================
 
-class FeiShuCellType:
-    """飞书单元格类型基类"""
+class FeiShuCellType(ABC):
+    """飞书单元格类型基类，所有类型请参考 fastfeishu.models.type.CellTypeConverter.auto_convert"""
     def to_json(self):
         """转换为JSON格式，子类需要实现"""
         raise NotImplementedError("子类必须实现 to_json 方法")
@@ -795,7 +795,7 @@ class CellTypeConverter:
     """
 
     @staticmethod
-    def auto_convert(item: any, validate_email: bool = True) -> FeiShuCellType:
+    def auto_convert(item: any, validate_email: bool = True) -> FeiShuCellType | Any | None:
         """自动识别并转换单个数据为 FeiShuCellType 对象
 
         Args:
@@ -814,13 +814,16 @@ class CellTypeConverter:
             number = CellTypeConverter.auto_convert_to_type(100)
             json_data = number.to_json()  # 手动转 JSON
         """
+        if item is None:
+            return None
+
         # 如果已经是 FeiShuCellType，直接返回
         if isinstance(item, FeiShuCellType):
             return item
 
         # 数字（注意排除布尔类型）
         if isinstance(item, (int, float)) and not isinstance(item, bool):
-            return Number(item)
+            return item
 
         # 布尔值
         if isinstance(item, bool):
@@ -844,7 +847,7 @@ class CellTypeConverter:
                 return Formula(item)
 
             # 普通文本
-            return PlainText(item)
+            return item
 
         # 日期类型（注意要在 datetime 之前检测）
         if isinstance(item, datetime):
@@ -860,8 +863,12 @@ class CellTypeConverter:
             except ValueError:
                 raise ValueError(f"{item} 数组在转化为下拉列表时失败，请检查数据")
 
-        # 其他类型转为字符串
-        return PlainText(str(item))
+        # 如果是 dict 并且是图片类型
+        if isinstance(item, dict) and item.get('type') == 'embed-image':
+            return FeiShuCellImage(**item)
+
+        # 其他类型
+        return item
 
     @staticmethod
     def auto_convert_to_json(item: any, validate_email: bool = True):
@@ -969,4 +976,26 @@ class CellTypeConverter:
         return {
             key: CellTypeConverter.auto_convert_to_json(value, validate_email)
             for key, value in data.items()
+        }
+
+@dataclass
+class FeiShuCellImage(FeiShuCellType):
+    """使用 read_images 方法读取后的返回值"""
+
+    fileToken: str
+    link: str
+    width: int
+    height: int
+    type: str
+    text: str = ''  # 占位，一直为空
+
+    def to_json(self):
+        """将对象转换为字典，方便 json.dumps 序列化"""
+        return {
+            'fileToken': self.fileToken,
+            'link': self.link,
+            'width': self.width,
+            'height': self.height,
+            'type': self.type,
+            'text': self.text
         }

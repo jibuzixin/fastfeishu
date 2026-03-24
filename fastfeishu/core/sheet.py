@@ -5,6 +5,7 @@ from typing import Union, Any, Optional, List, Generator, Dict, Literal, Type, T
 from fastfeishu.helpers import num_to_excel_col, match_row_num_by_range, match_col_letter_by_range, excel_col_to_num, cell_is_blank
 from fastfeishu.exceptions.exception import FeiShuColumnNotExist, FeiShuException
 from fastfeishu.core.interface import FeiShuInterface
+from fastfeishu.models.type import FeiShuCellType, FeiShuCellImage
 from fastfeishu.utils.partition_grid import partition_grid
 
 
@@ -506,7 +507,13 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         data = self.read(sheet_range, value_render_option="Formula", date_time_render_option='')
         return data
 
-    def read_column(self, column_name: str, read_method: Callable[str, List[List[Any]]] = None) -> List[Any]:
+    def read_column(
+        self,
+        column_name: str,
+        start_row: int = 2,
+        end_row: int = None,
+        read_method: Callable[str, List[List[Any]]] = None
+    ) -> List[Any]:
         """
         根据列名读取对应列的所有数据，返回一维数组。
         """
@@ -514,8 +521,25 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
             read_method = self.read_human
         col_index = self.get_index_by_col_name(column_name)
         col_letter = num_to_excel_col(col_index)
-        data = read_method(f'{col_letter}2:{col_letter}{self.get_sheet_info()["rowCount"]}')
+        data = read_method(f'{col_letter}{start_row}:{col_letter}{end_row or self.get_sheet_info()["rowCount"]}')
         return [row[0] for row in data]
+
+    def read_image_column(
+        self,
+        column_name: str,
+        start_row: int = 2,
+        end_row: int = None,
+    ) -> List[bytes]:
+        """读取图片列，返回一个包含图片二进制数据的数组，如果单元格不是或者不包含图片，值为 None"""
+        image_bytes_list = []
+
+        for cell in self.read_column(column_name, start_row, end_row, self.read_images):
+            if cell is not None and isinstance(cell, FeiShuCellImage):
+                image_bytes_list.append(self.download_image_bytes(cell.fileToken))
+            else:
+                image_bytes_list.append(None)
+
+        return image_bytes_list
 
     def read_row(
         self,

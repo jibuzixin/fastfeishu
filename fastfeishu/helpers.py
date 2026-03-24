@@ -9,7 +9,24 @@ import re
 import base64
 import pandas as pd
 from typing import Tuple, Union, Any
+import requests
+from urllib.parse import unquote
 
+
+def extract_filename_from_response(response: requests.Response) -> str | None:
+    """从响应头中提取文件名"""
+    content_disposition = response.headers.get('Content-Disposition')
+    if not content_disposition:
+        return None
+
+    # 方法1：使用正则表达式提取（更健壮）
+    filename_match = re.search(r'filename\*?=["\']?(?:UTF-\d[\'"]*)?([^"\';\s]+)', content_disposition)
+    if filename_match:
+        filename = filename_match.group(1)
+        # 处理可能的URL编码
+        filename = unquote(filename)
+        return filename
+    return None
 
 def cell_is_blank(cell_data: Any) -> bool:
     """判断单元格是否为空、None、nan"""
