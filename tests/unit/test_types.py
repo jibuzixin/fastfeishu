@@ -14,11 +14,11 @@ class TestCellTypes:
 
     def test_text_link_creation(self):
         """测试创建文本链接"""
-        link = TextLink("https://example.com", "示例链接")
+        link = TextLink("https://example.com", "示例链接").to_json()
 
-        assert link.link == "https://example.com"
-        assert link.text == "示例链接"
-        assert link.type == "url"
+        assert link['link'] == "https://example.com"
+        assert link['text'] == "示例链接"
+        assert link['type'] == "url"
 
     def test_email_creation(self):
         """测试创建邮箱类型"""
@@ -28,10 +28,10 @@ class TestCellTypes:
 
     def test_formula_creation(self):
         """测试创建公式"""
-        formula = Formula("=SUM(A1:A10)")
+        formula = Formula("=SUM(A1:A10)").to_json()
 
-        assert formula.text == "=SUM(A1:A10)"
-        assert formula.type == "formula"
+        assert formula['text'] == "=SUM(A1:A10)"
+        assert formula['type'] == "formula"
 
     def test_text_link_with_chinese(self):
         """测试包含中文的文本链接"""
@@ -42,8 +42,8 @@ class TestCellTypes:
 
     def test_formula_with_complex_expression(self):
         """测试复杂公式"""
-        formula = Formula("=IF(A1>10, SUM(B1:B10), AVERAGE(C1:C10))")
+        formula = Formula("=IF(A1>10, SUM(B1:B10), AVERAGE(C1:C10))").to_json()
 
-        assert "IF" in formula.text
-        assert "SUM" in formula.text
-        assert "AVERAGE" in formula.text
+        assert "IF" in formula['text']
+        assert "SUM" in formula['text']
+        assert "AVERAGE" in formula['text']

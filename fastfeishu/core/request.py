@@ -8,7 +8,7 @@ from requests import Response
 
 from fastfeishu.configs.settings import get_feishu_property
 from fastfeishu.models.type import Formula, FeiShuCellType
-from fastfeishu.helpers import base64_image
+from fastfeishu.helpers import base64_image, extract_filename_from_response
 from fastfeishu.exceptions.exception import FeiShuException
 from fastfeishu.models.feishu_var import FeishuVariable
 from datetime import datetime
@@ -26,6 +26,7 @@ class FeiShuRequest:
     link_media = feishu_property.links.media
     link_sheets = feishu_property.links.sheets
     link_workBook = feishu_property.links.workBook
+    link_export = feishu_property.links.export
 
     def __init__(self, link: str):
         self.tat = self.get_tenant_token()
@@ -215,14 +216,7 @@ class FeiShuRequest:
         :param sheet_range: 读取表格的范围: 'A2:BC10'
         """
 
-        url = self._build_url(
-            self.link_sheets.read.format(
-                self.sheet_id + "!" + sheet_range.upper(), SHEET_TOKEN=self.sheet_token
-            ).human_repr(),
-        )
-        response = requests.get(url, headers=self._get_request_headers())
-        response.raise_for_status()
-        return response
+        return self.read(sheet_range, value_render_option="Formula", date_time_render_option="FormattedString")
 
     def insert(self, sheet_range: str, data_list: List[List]) -> requests.Response:
         """
@@ -577,8 +571,13 @@ class FeiShuRequest:
         extra: str | None = None,
         chunk_size: int = 8192,
         timeout: int = 30,
-    ) -> bytes:
-        """所有下载方法的底层实现.[文档](https://open.feishu.cn/document/server-docs/docs/drive-v1/media/download)"""
+    ) -> Tuple[str | None, bytes]:
+        """
+        所有下载方法的底层实现.[文档](https://open.feishu.cn/document/server-docs/docs/drive-v1/media/download)
+
+        Return:
+            返回一个元组(文件名.扩展名--可能为 None, 二进制数据)
+        """
         image_down_url = self.link_media.imageDownload.format(FILE_TOKEN=file_token)
         if extra:
             image_down_url = image_down_url.with_query(extra=extra)
@@ -592,20 +591,12 @@ class FeiShuRequest:
         )
         response.raise_for_status()
 
+        filename = extract_filename_from_response(response)
+
         chunks = [
             chunk for chunk in response.iter_content(chunk_size=chunk_size) if chunk
         ]
-        return b"".join(chunks)
-
-    def get_media_content_type(
-        self,
-        file_token: str,
-    ):
-        """发送一个头请求，获取资源类型"""
-        return requests.head(
-            str(self.link_media.download.get_url(FILE_TOKEN=file_token)),
-            headers={"Authorization": f"Bearer {self.tat}"},
-        ).headers.get("content-type", "")
+        return filename, b"".join(chunks)
 
     @staticmethod
     def parse_feishu_url(url: str) -> Tuple[str, str] | Tuple[None, None]:
@@ -677,5 +668,145 @@ class FeiShuRequest:
         )
         body = {"data": processed_data}
         response = requests.put(url, headers=self._get_request_headers(), data=json.dumps(body))
+        response.raise_for_status()
+        return response
+
+    # ========== 导出任务相关方法 ==========
+
+    def create_export_task(
+        self,
+        token: str,
+        doc_type: str,
+        file_extension: str,
+        sub_id: str = None
+    ) -> requests.Response:
+        """
+        创建导出任务
+
+        将飞书云文档导出为本地文件，支持导出为 Word、Excel、PDF、CSV 格式。
+        这是一个异步接口，需要继续调用 get_export_task_result 获取导出结果。
+
+        参考文档: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/drive-v1/export_task/create
+
+        Args:
+            token: 要导出的云文档的 token
+            doc_type: 云文档类型，可选值：
+                - doc: 旧版飞书文档（已不推荐）
+                - sheet: 飞书电子表格
+                - bitable: 飞书多维表格
+                - docx: 新版飞书文档
+            file_extension: 导出文件扩展名，可选值：
+                - docx: Microsoft Word 格式
+                - pdf: PDF 格式
+                - xlsx: Microsoft Excel 格式
+                - csv: CSV 格式
+            sub_id: 导出电子表格或多维表格为 CSV 时，需要传入工作表或数据表的 ID
+
+        Returns:
+            requests.Response: API 响应对象，包含导出任务 ID (ticket)
+
+        Example:
+            >>> request = FeiShuRequest(link)
+            >>> response = request.create_export_task(
+            ...     token="your_doc_token",
+            ...     doc_type="docx",
+            ...     file_extension="pdf"
+            ... )
+            >>> ticket = response.json()["data"]["ticket"]
+        """
+        url = self._build_url(
+            self.link_export.createTask.human_repr()
+        )
+
+        body = {
+            "file_extension": file_extension,
+            "token": token,
+            "type": doc_type
+        }
+
+        if sub_id:
+            body["sub_id"] = sub_id
+
+        response = requests.post(
+            url,
+            headers=self._get_request_headers(),
+            data=json.dumps(body)
+        )
+        response.raise_for_status()
+        return response
+
+    def get_export_task_result(
+        self,
+        ticket: str,
+        token: str
+    ) -> requests.Response:
+        """
+        查询导出任务结果
+
+        根据导出任务 ID 查询导出任务的状态和结果，返回导出文件的 token。
+
+        参考文档: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/drive-v1/export_task/get
+
+        Args:
+            ticket: 导出任务 ID，由 create_export_task 返回
+            token: 要导出的云文档的 token（与创建任务时的 token 保持一致）
+
+        Returns:
+            requests.Response: API 响应对象，包含导出任务状态和文件信息
+
+        Example:
+            >>> request = FeiShuRequest(link)
+            >>> response = request.get_export_task_result(
+            ...     ticket="6933093124755423251",
+            ...     token="your_doc_token"
+            ... )
+            >>> result = response.json()["data"]["result"]
+            >>> if result["job_status"] == 0:  # 成功
+            ...     file_token = result["file_token"]
+        """
+        url = self._build_url(
+            self.link_export.getTaskResult
+            .format(TICKET=ticket)
+            .with_query(token=token)
+            .human_repr()
+        )
+
+        response = requests.get(url, headers=self._get_request_headers())
+        response.raise_for_status()
+        return response
+
+    def download_export_file(
+        self,
+        file_token: str
+    ) -> requests.Response:
+        """
+        下载导出文件
+
+        根据导出文件的 token 下载导出的产物到本地。
+        注意：导出文件在导出任务结束 10 分钟后会被删除，请及时下载。
+
+        参考文档: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/drive-v1/export_task/download
+
+        Args:
+            file_token: 导出文件的 token，由 get_export_task_result 返回
+
+        Returns:
+            requests.Response: API 响应对象，响应体为文件二进制流
+
+        Example:
+            >>> request = FeiShuRequest(link)
+            >>> response = request.download_export_file(
+            ...     file_token="boxcnxe5OdjlAkNgSNdsJvabcef"
+            ... )
+            >>> with open("export.pdf", "wb") as f:
+            ...     f.write(response.content)
+        """
+        url = self._build_url(
+            self.link_export.downloadFile
+            .format(FILE_TOKEN=file_token)
+            .human_repr()
+        )
+
+        response = requests.get(url, headers=self._get_request_headers())
         response.raise_for_status()
         return response

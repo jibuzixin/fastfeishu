@@ -1,9 +1,11 @@
+import os
 import requests
 
 from io import BytesIO
-from typing import Any, Dict, List, Literal, Union, Self
+from typing import Any, Dict, List, Literal, Union, Self, Tuple
 from fastfeishu.models import SheetProperties, CellStyle
 from fastfeishu.models.cell_style import StyleRangeData
+from fastfeishu.models.type import FeiShuCellImage, CellTypeConverter, FeiShuCellType
 from yarl import URL
 from pathlib import Path
 from PIL import Image
@@ -187,7 +189,7 @@ class FeiShuSheetOperations:
         if major_dimension.upper() == "COLUMNS":
             self._alter_header = True
 
-    def write_image(self, cell, image, image_name="cell.png"):
+    def write_image(self, cell: str, image: Union[str, bytes], image_name="cell.png"):
         """
         [写入图片](https://open.feishu.cn/document/server-docs/docs/sheets-v3/data-operation/write-images)
 
@@ -462,9 +464,19 @@ class FeiShuSheetOperations:
         response = self._request.read_batch(ranges, value_render_option, date_time_render_option)
         return _response_json(response)["data"]
 
-    def read_images(self, sheet_range) -> List[List[Any]]:
+    def read_images(self, sheet_range) -> List[List[FeiShuCellType]]:
+        """读取 sheet_range 单元格范围的图片信息"""
         response = self._request.read_images(sheet_range)
-        return _response_json(response)["data"]["valueRange"]["values"]
+        values = _response_json(response)["data"]["valueRange"]["values"]
+
+        # 将图片类型转化为对应的实体类
+        images = []
+        for row in values:
+            new_row = []
+            for cell in row:
+                new_row.append(CellTypeConverter.auto_convert(cell))
+            images.append(new_row)
+        return images
 
     # TODO 下载图片应该提取到飞书工具中
     def download_image_to_path(
@@ -476,34 +488,50 @@ class FeiShuSheetOperations:
     ) -> Path:
         """
         下载图片并保存到本地路径
+
+        Args:
+            file_token: 飞书文件token
+            save_path: 保存路径，可以是：
+
+                       - 文件夹路径：自动创建文件夹，使用file_token+扩展名作为文件名
+                       - 文件路径：直接保存到指定路径（会自动创建父目录）
+
+        Returns:
+            实际保存的文件完整路径
         """
         save_path = Path(save_path)
-        data = self._request.download_media_raw(file_token, extra=extra)
 
-        if save_path.is_dir():
-            content_type = self._request.get_media_content_type(file_token)
-            ext = {
-                "image/png": ".png",
-                "image/jpeg": ".jpg",
-                "image/webp": ".webp",
-                "image/gif": ".gif",
-            }.get(content_type, ".jpg")
-            save_path = save_path / f"{file_token}{ext}"
+        # 先下载获取文件名和数据
+        filename, data = self._request.download_media_raw(file_token, extra=extra)
 
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-        save_path.write_bytes(data)
-        return save_path.resolve()
+        # 判断save_path是文件夹还是文件
+        if save_path.suffix:  # 有扩展名，说明是文件路径
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            final_path = save_path
+        else:
+            save_path.mkdir(parents=True, exist_ok=True)
+            # 生成文件名：使用file_token + 扩展名
+            ext = os.path.splitext(filename)[1] if filename else '.png'
+            final_path = save_path / f"{file_token}{ext}"
+        # 保存文件
+        final_path.write_bytes(data)
+
+        return final_path.resolve()
 
     def download_image_bytes(
         self,
         file_token: str,
         *,
         extra: str | None = None,
-    ) -> bytes:
+    ) -> Tuple[bytes]:
         """
         下载图片到内存，返回原始字节（推荐用于 OCR、上传、处理）
+
+        Returns:
+            返回一个图片的扩展名和二进制数据 `ext, bytes_data = download_image_bytes('***')`
         """
-        return self._request.download_media_raw(file_token, extra=extra)
+        _, data = self._request.download_media_raw(file_token, extra=extra)
+        return data
 
     def download_image_stream(
         self,
@@ -514,7 +542,7 @@ class FeiShuSheetOperations:
         """
         下载图片为内存流（推荐用于 FastAPI 响应、流式上传）
         """
-        data = self._request.download_media_raw(file_token, extra=extra)
+        _, data = self._request.download_media_raw(file_token, extra=extra)
         stream = BytesIO(data)
         stream.name = file_token
         return stream
@@ -537,7 +565,7 @@ class FeiShuSheetOperations:
         :return: base64 编码的图片字符串（不带 data:image/...;base64, 前缀）
         """
         # 1. 下载原始字节
-        data = self._request.download_media_raw(file_token, extra=extra)
+        _, data = self._request.download_media_raw(file_token, extra=extra)
 
         # 如果不需要压缩，直接转 base64 返回
         if compress is None:
