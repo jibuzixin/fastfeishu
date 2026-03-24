@@ -364,6 +364,29 @@ if __name__ == '__main__':
     img_stream = s.download_image_stream(file_token)
 ```
 
+#### 读取图片列
+
+```python
+from fastfeishu.core import FeiShuSheet
+
+if __name__ == '__main__':
+    s = FeiShuSheet('飞书链接')
+
+    # 根据列名读取整列图片（默认从第2行开始）
+    # 返回二进制数据列表，如果单元格不包含图片则为 None
+    image_list = s.read_image_column('图片列')
+
+    # 指定读取范围（从第3行开始，到第10行结束）
+    image_list = s.read_image_column('图片列', start_row=3, end_row=10)
+
+    # 保存图片到本地
+    for index, image_bytes in enumerate(image_list):
+        if image_bytes is not None:
+            with open(f'./image_{index}.png', 'wb') as f:
+                f.write(image_bytes)
+            print(f"图片 {index} 写入成功")
+```
+
 ### 2.2 写入数据
 
 #### 写入范围
@@ -910,6 +933,7 @@ if __name__ == '__main__':
 - `read_human(sheet_range)` - 人类可读方式读取
 - `read_images(sheet_range)` - 读取图片
 - `read_column(column_name)` - 读取指定列（返回一维数组）
+- `read_image_column(column_name, start_row=2, end_row=None)` - 读取图片列（返回二进制数据列表）
 - `read_row(row_number, full_row=False, read_method=None)` - 读取指定行（返回字典）
 - `read_rows(row_number, full_row=False, read_method=None)` - 批量读取指定多行的数据（返回字典）
 - `iterrows(start_row=2, end_row=None, batch_size=500, return_type=dict, columns=None, read_method=None)` - 流式迭代
