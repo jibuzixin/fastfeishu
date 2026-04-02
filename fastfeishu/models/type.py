@@ -999,3 +999,26 @@ class FeiShuCellImage(FeiShuCellType):
             'type': self.type,
             'text': self.text
         }
+
+@dataclass
+class FeiShuSheetInfo:
+    """飞书 sheet 类型"""
+
+    index: int
+    sheetId: str
+    title: str
+    columnCount: int
+    rowCount: int
+    frozenColCount: int
+    frozenRowCount: int
+
+    def to_json(self):
+        return {
+            'index': self.index,
+            'sheetId': self.sheetId,
+            'title': self.title,
+            'columnCount': self.columnCount,
+            'rowCount': self.rowCount,
+            'frozenColCount': self.frozenColCount,
+            'frozenRowCount': self.frozenRowCount,
+        }

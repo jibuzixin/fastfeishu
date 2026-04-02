@@ -5,7 +5,7 @@ from typing import Union, Any, Optional, List, Generator, Dict, Literal, Type, T
 from fastfeishu.helpers import num_to_excel_col, match_row_num_by_range, match_col_letter_by_range, excel_col_to_num, cell_is_blank
 from fastfeishu.exceptions.exception import FeiShuColumnNotExist, FeiShuException
 from fastfeishu.core.interface import FeiShuInterface
-from fastfeishu.models.type import FeiShuCellType, FeiShuCellImage
+from fastfeishu.models.type import FeiShuCellType, FeiShuCellImage, FeiShuSheetInfo
 from fastfeishu.utils.partition_grid import partition_grid
 
 
@@ -409,7 +409,7 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
             raise ValueError(f"输入 hang_header 数据范围有误，当前 {end_col} 比 {start_col} 要小，输入数据: {hang_header_range}")
 
         # 3. 获取行的内容作为临时表头
-        header = self.read_human(hang_header_range)[0]
+        header = [str(item) for item in self.read_human(hang_header_range)[0]]
 
         # 4. 将数据按照表头对齐（复用公共方法）
         write_list, _, heads_len = self._convert_data_to_grid(data, header, write_row=2)  # write_row>1 避免表头处理逻辑
@@ -781,6 +781,11 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
             return info["title"]
         else:
             return ''
+
+    def get_sheets_info(self) -> List[FeiShuSheetInfo]:
+        responses = self.get_sheet_metadata()
+        sheets = [FeiShuSheetInfo(**s) for s in responses["data"]["sheets"]]
+        return sheets
 
     def iterrows(
         self,

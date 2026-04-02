@@ -97,6 +97,10 @@ class FeiShuSheetOperations:
     # -------------------------------------- 其他操作 --------------------------------------------
     def get_sheet_metadata(self) -> Dict[str, Any]:
         response = self._request.get_sheet_metadata()
+        if response["code"] != 0:
+            raise FeiShuRequestException(f"\n>>>\tcode: {response_json['code']}"
+                                         f"\n>>>\tmsg: {response_json['msg']}"
+                                         f"\n>>>\t飞书通用异常情况查看：https://open.feishu.cn/document/server-docs/api-call-guide/generic-error-code")
         return response
 
     def get_sheet_info(self) -> Dict[str, Any] | None:
