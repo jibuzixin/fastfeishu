@@ -1011,6 +1011,7 @@ class FeiShuSheetInfo:
     rowCount: int
     frozenColCount: int
     frozenRowCount: int
+    merges: list = field(default_factory=list)
 
     def to_json(self):
         return {
@@ -1021,4 +1022,5 @@ class FeiShuSheetInfo:
             'rowCount': self.rowCount,
             'frozenColCount': self.frozenColCount,
             'frozenRowCount': self.frozenRowCount,
+            'merges': self.merges
         }
