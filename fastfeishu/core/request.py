@@ -263,9 +263,11 @@ class FeiShuRequest:
             for c, item in enumerate(row):
                 if isinstance(item, FeiShuCellType):
                     data_list[r][c] = item.to_json()
+                elif isinstance(item, bool):
+                    data_list[r][c] = "True" if item else "False"
                 elif isinstance(item, float) and math.isnan(item):
                     data_list[r][c] = None
-                elif item is None or isinstance(item, (int, float, bool)):
+                elif item is None or isinstance(item, (int, float)):
                     continue
                 elif isinstance(item, str):  # 公式
                     if item.startswith("="):

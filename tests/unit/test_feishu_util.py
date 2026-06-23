@@ -101,10 +101,8 @@ class TestFeiShuUtil:
         mock_target.write = Mock()
         mock_target.append = Mock()
 
-        # 修正：使用正确的处理函数（接收元组）
         def handler(row):
-            index, data = row
-            return [data]
+            return [row]
 
         result = FeiShuUtil.process_rows_to_new_sheet(
             source_sheet=mock_source,
@@ -138,8 +136,7 @@ class TestFeiShuUtil:
 
         # 自定义处理函数：将年龄加10
         def custom_handler(row):
-            index, data = row
-            data = data.copy()
+            data = row.copy()
             data["年龄"] = data["年龄"] + 10
             return [data]
 
@@ -167,8 +164,7 @@ class TestFeiShuUtil:
 
         # 修正：使用正确的处理函数
         def handler(row):
-            index, data = row
-            return [data]
+            return [row]
 
         with patch.object(FeiShuUtil, '_flush_to_sheet') as mock_flush:
             # 设置 batch_write=2，应该触发多次 flush
@@ -211,10 +207,9 @@ class TestFeiShuUtil:
 
         # 处理函数：将一行扩展为两行
         def expand_handler(row):
-            index, data = row
             return [
-                {"姓名": data["姓名"], "类型": "原始"},
-                {"姓名": data["姓名"], "类型": "复制"}
+                {"姓名": row["姓名"], "类型": "原始"},
+                {"姓名": row["姓名"], "类型": "复制"}
             ]
 
         with patch.object(FeiShuUtil, '_flush_to_sheet') as mock_flush:

@@ -12,7 +12,7 @@ class FeiShuUtil:
         target_sheet: FeiShuInterface,  # 目标 sheet
         start_row: int = 2,  # 数据起始行（含），默认跳过表头
         end_row: Optional[int] = None,  # 数据结束行（含），None=全部
-        row_handler: Callable[[Union[pd.Series, Dict[str, Any]]], List[Dict[str, Any]]] = lambda row: [row.to_dict()],
+        row_handler: Callable[[Union[pd.Series, Dict[str, Any]]], List[Dict[str, Any]]] = lambda row: [row],
         batch_write: int = 2000,  # 每批写多少行
     ) -> FeiShuInterface:
         """
@@ -46,7 +46,7 @@ class FeiShuUtil:
         header_written = False
         buffer: List[Dict[str, Any]] = []  # 待写入的缓冲
 
-        for row in source_sheet.iterrows(
+        for index, row in source_sheet.iterrows(
             start_row=start_row,
             end_row=end_row,
         ):

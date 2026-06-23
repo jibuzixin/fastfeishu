@@ -97,7 +97,14 @@ class FeiShuSheetOperations:
     # -------------------------------------- 其他操作 --------------------------------------------
     def get_sheet_metadata(self) -> Dict[str, Any]:
         response = self._request.get_sheet_metadata()
+        if response["code"] != 0:
+            raise FeiShuRequestException(f"\n>>>\tcode: {response_json['code']}"
+                                         f"\n>>>\tmsg: {response_json['msg']}"
+                                         f"\n>>>\t飞书通用异常情况查看：https://open.feishu.cn/document/server-docs/api-call-guide/generic-error-code")
         return response
+
+    def get_workbook_title(self) -> Dict[str, Any]:
+        return self.get_sheet_metadata()["data"]["properties"]["title"]
 
     def get_sheet_info(self) -> Dict[str, Any] | None:
         response_json = self._request.get_sheet_info().json()
@@ -305,7 +312,7 @@ class FeiShuSheetOperations:
         response = self._request.set_style(sheet_range, style)
         _response_json(response)
 
-    def set_styles(self, data: List[StyleRangeData]):
+    def set_styles(self, data: List[Union[StyleRangeData, Union[CellStyle, Dict[str, Any]]]]):
         """
         批量设置单元格样式，支持为多个范围设置不同的样式。
 
