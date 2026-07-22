@@ -1,18 +1,40 @@
 from setuptools import setup, find_packages
 
-# 读取 requirements.txt 文件中的依赖
-with open('requirements.txt', 'r') as f:
-    install_requires = [line.strip() for line in f.readlines() if line.strip()]
-
 setup(
     name='fastfeishu',
-    version='1.3.2',
-    author='yuzhuoyang',
+    version='0.0.1a1',
+    author='jibuzixin',
     author_email='this.jibuzixin@gmail.com',
-    description='飞书文档快速操作API',
-    long_description=open('README.md').read(),
-    long_description_content_type='text/markdown',  # 指定描述内容类型为 Markdown
-    packages=find_packages(),  # 自动查找项目中的包
-    install_requires=install_requires,
-    python_requires='>=3.11, <3.13',  # 支持Python 3.11和3.12
+    description='飞书文档快速操作API - 飞书（Lark）Sheets API v3 的高级 Python 封装',
+    long_description=open('README.md', encoding='utf-8').read(),
+    long_description_content_type='text/markdown',
+    url='https://github.com/jibuzixin/fastfeishu',
+    packages=find_packages(include=['fastfeishu', 'fastfeishu.*']),
+    package_data={
+        'fastfeishu': ['configs/*.yaml'],
+    },
+    include_package_data=True,
+    classifiers=[
+        'Development Status :: 3 - Alpha',
+        'Intended Audience :: Developers',
+        'License :: OSI Approved :: MIT License',
+        'Programming Language :: Python :: 3',
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
+        'Topic :: Office/Business :: Financial :: Spreadsheet',
+        'Topic :: Software Development :: Libraries :: Python Modules',
+    ],
+    install_requires=[
+        'requests>=2.28.0',
+        'pandas>=1.5.3',
+        'Pillow>=10.0.0',
+        'pydantic_settings>=2.0.0',
+        'python-dotenv>=1.0.0',
+        'PyYAML>=6.0',
+        'yarl>=1.9.0',
+        'aiohttp>=3.9.0',
+    ],
+    python_requires='>=3.9',
 )
