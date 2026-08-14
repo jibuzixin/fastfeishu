@@ -89,7 +89,6 @@ FS_APP_SECRET=''       # 飞书应用密钥
 
 ```
 项目根目录
-├── chatgpt                         # 大模型接口
 ├── fastfeishu                      # 飞书在线文档操作接口
 │   ├── __init__.py
 │   ├── helpers.py                  # 纯工具函数（零依赖）
@@ -103,6 +102,7 @@ FS_APP_SECRET=''       # 飞书应用密钥
 │   ├── models/                     # 数据模型
 │   │   ├── sheet_properties.py     # Sheet属性配置
 │   │   ├── cell_style.py           # 单元格样式
+│   │   ├── export_task.py          # 导出任务
 │   │   └── type.py                 # 单元格类型
 │   └── utils/                      # 高级工具
 │       ├── common.py               # 批量下载等高级功能
@@ -118,6 +118,8 @@ FS_APP_SECRET=''       # 飞书应用密钥
 - `models/` - 数据模型层
 - `core/` - 核心业务逻辑层
 - `utils/` - 高级工具层（可依赖 core）
+
+---
 
 ## 二、基础操作
 
@@ -177,6 +179,9 @@ if __name__ == '__main__':
     # 根据列名读取整列数据（从第2行开始）
     column_data = s.read_column('CaseID')
     print(column_data)  # [1, 2, 3, 4, ...]
+
+    # 指定读取范围
+    column_data = s.read_column('CaseID', start_row=3, end_row=100)
 ```
 
 #### 读取指定行
@@ -248,6 +253,19 @@ if __name__ == '__main__':
     rows_with_formula = s.read_rows([2, 3], read_method=s.read_raw)
 
     # 注意：该接口返回数据的最大限制为 10 MB
+```
+
+#### 批量读取多范围
+
+```python
+from fastfeishu.core import FeiShuSheet
+
+if __name__ == '__main__':
+    s = FeiShuSheet('飞书链接', readonly=True)
+
+    # 同时读取多个范围，性能更高
+    result = s.read_batch(["A1:C3", "D5:E10"])
+    # result["valueRanges"] 包含每个范围的读取结果
 ```
 
 #### 遍历整张表（流式读取）
@@ -406,6 +424,45 @@ if __name__ == '__main__':
         ['数据3', '数据4'],
         # ... 更多行
     ])
+```
+
+#### 批量写入多个范围
+
+```python
+from fastfeishu.core import FeiShuSheet
+
+if __name__ == '__main__':
+    s = FeiShuSheet('飞书链接')
+
+    # 同时写入多个范围，性能更高
+    s.write_batch([
+        {"range": "A2:B3", "values": [[1, 2], [3, 4]]},
+        {"range": "D2:E3", "values": [[5, 6], [7, 8]]},
+    ])
+```
+
+#### 追加数据
+
+```python
+from fastfeishu.core import FeiShuSheet
+
+if __name__ == '__main__':
+    s = FeiShuSheet('飞书链接')
+
+    # 在已有数据末尾追加数据
+    s.append('A10:C15', [[1, 2, 3], [4, 5, 6]])
+```
+
+#### 插入数据
+
+```python
+from fastfeishu.core import FeiShuSheet
+
+if __name__ == '__main__':
+    s = FeiShuSheet('飞书链接')
+
+    # 在指定位置上方插入新行并写入数据
+    s.insert('A10:C10', [[1, 2, 3]])
 ```
 
 #### 按列名写入（自动新增列）
@@ -568,9 +625,29 @@ if __name__ == '__main__':
 
     # 在B列左边插入2个空列
     s.insert_column_to_left('B', insert_number=2)
+
+    # 在指定位置插入空列（继承样式）
+    s.insert_column_to_right('D', insert_number=1, inherit_style=True)
 ```
 
-### 2.4 高级操作
+### 2.4 行列追加
+
+```python
+from fastfeishu.core import FeiShuSheet
+
+if __name__ == '__main__':
+    s = FeiShuSheet('飞书链接')
+
+    # 在工作表末尾追加5行
+    total_rows = s.append_series(5, "ROWS")
+    print(f"当前总行数: {total_rows}")
+
+    # 在工作表末尾追加3列，返回新列的字母索引
+    new_col_letter = s.append_series(3, "COLUMNS")
+    print(f"新列字母索引: {new_col_letter}")
+```
+
+### 2.5 高级操作
 
 #### 替换占位符（支持类型保持）
 
@@ -824,9 +901,185 @@ if __name__ == '__main__':
 **其他**:
 - `clean`: 是否清除所有格式（True/False，默认 False）
 
-## 三、批量处理
+---
 
-### 3.1 FeiShuUtil 工具类
+## 三、单元格类型
+
+支持写入特殊单元格类型，让单元格内容更丰富：
+
+### 3.1 基础类型
+
+```python
+from fastfeishu.core import FeiShuSheet
+from fastfeishu.models.type import TextLink, Email, Formula, PlainText, Number, DateValue
+from datetime import date, datetime
+
+if __name__ == '__main__':
+    s = FeiShuSheet('飞书链接')
+
+    # 文本链接
+    s.write('a1', [[TextLink('https://example.com', '点击访问')]])
+
+    # 邮箱
+    s.write('b1', [[Email('test@example.com')]])
+
+    # 公式
+    s.write('c1', [[Formula('=A1+B1')]])
+
+    # 纯文本（显式）
+    s.write('d1', [[PlainText('普通文本')]])
+
+    # 数字（显式）
+    s.write('e1', [[Number(123.45)]])
+
+    # 日期（使用飞书日期格式）
+    # DateValue(44562) 对应 2022-01-01
+    s.write('f1', [[DateValue.from_date(date(2024, 3, 15))]])
+    s.write('g1', [[DateValue.today()]])       # 今天
+    s.write('h1', [[DateValue.now()]])          # 当前日期时间
+    s.write('i1', [[DateValue.from_string("2024-03-15")]])
+```
+
+### 3.2 富文本类型
+
+```python
+from fastfeishu.core import FeiShuSheet
+from fastfeishu.models.type import RichText, SegmentStyle, StyleDirector
+
+if __name__ == '__main__':
+    s = FeiShuSheet('飞书链接')
+
+    # 基础用法：构建富文本
+    rich = (RichText.builder()
+            .add_plain("状态：")
+            .add_bold("成功")
+            .add_plain("，共")
+            .add_colored("100", "#00cc00")
+            .add_plain("条")
+            .build())
+    s.write('a1', [[rich]])
+
+    # 使用预设样式（Director）
+    title = (RichText.builder()
+             .add_plain("", StyleDirector.title())  # 标题样式
+             .build())
+
+    warning = (RichText.builder()
+               .add_plain("警告", StyleDirector.warning())
+               .build())
+
+    # 拼接多个 RichText
+    rich1 = RichText.builder().add_plain("Part1").build()
+    rich2 = RichText.builder().add_bold("Part2").build()
+    combined = (RichText.builder()
+                .append_rich(rich1)
+                .add_plain(" - ")
+                .append_rich(rich2)
+                .build())
+```
+
+### 3.3 @人和@文档
+
+```python
+from fastfeishu.core import FeiShuSheet
+from fastfeishu.models.type import MentionUser, MentionDoc
+
+if __name__ == '__main__':
+    s = FeiShuSheet('飞书链接')
+
+    # @人（通过邮箱）
+    s.write('a1', [[MentionUser(
+        user_info='user@example.com',
+        text_type='email',
+        notify=True
+    )]])
+
+    # @文档
+    s.write('b1', [[MentionDoc(
+        file_token='doc_token',
+        obj_type='doc'
+    )]])
+```
+
+### 3.4 下拉列表
+
+```python
+from fastfeishu.core import FeiShuSheet
+from fastfeishu.models.type import MultipleValue
+
+if __name__ == '__main__':
+    s = FeiShuSheet('飞书链接')
+
+    # 创建下拉列表
+    s.write('a1', [[MultipleValue(['选项A', '选项B', '选项C'])]])
+
+    # 包含布尔值的下拉列表
+    s.write('b1', [[MultipleValue([True, False, '待定'])]])
+```
+
+### 3.5 带样式的链接和邮箱
+
+```python
+from fastfeishu.core import FeiShuSheet
+from fastfeishu.models.type import StyledLink, StyledEmail, SegmentStyle, TextSegment
+
+if __name__ == '__main__':
+    s = FeiShuSheet('飞书链接')
+
+    # 带分段样式的链接
+    s.write('a1', [[StyledLink(
+        link='https://example.com',
+        text='点击访问',
+        segments=[
+            TextSegment("访问", SegmentStyle(bold=True, foreColor="#ff0000").to_json()),
+            TextSegment("页面", SegmentStyle(italic=True).to_json())
+        ]
+    )]])
+
+    # 带样式的邮箱
+    s.write('b1', [[StyledEmail(
+        email='test@example.com',
+        segments=[
+            TextSegment("联系", SegmentStyle(bold=True).to_json()),
+            TextSegment("我们", SegmentStyle(italic=True).to_json())
+        ]
+    )]])
+```
+
+### 3.6 自动类型转换
+
+```python
+from fastfeishu.core import FeiShuSheet
+from fastfeishu.models.type import CellTypeConverter
+
+if __name__ == '__main__':
+    s = FeiShuSheet('飞书链接')
+
+    # 自动识别类型并转换
+    cell = CellTypeConverter.auto_convert("https://example.com")  # 返回 NotTextLink
+    cell2 = CellTypeConverter.auto_convert("test@example.com")      # 返回 Email
+    cell3 = CellTypeConverter.auto_convert("=A1+B1")               # 返回 Formula
+    cell4 = CellTypeConverter.auto_convert(123)                   # 返回 123（数字）
+    cell5 = CellTypeConverter.auto_convert(True)                    # 返回 PlainText("True")
+
+    # 批量转换列表
+    data = ["https://example.com", "test@example.com", "=A1+B1", 123]
+    cells = CellTypeConverter.from_list(data)
+
+    # 批量转换二维表格
+    table = [
+        ["https://example.com", "test@example.com"],
+        ["=A1+B1", 123]
+    ]
+    cells_table = CellTypeConverter.from_list_to_json(table)
+    s.write('A1:D2', cells_table)
+```
+
+---
+
+## 四、批量处理
+
+### 4.1 FeiShuUtil 工具类
 
 ```python
 from fastfeishu.core import FeiShuSheet
@@ -867,7 +1120,7 @@ if __name__ == '__main__':
     )
 ```
 
-### 3.2 自定义数据源
+### 4.2 自定义数据源
 
 ```python
 from fastfeishu.core import FeiShuSheet
@@ -902,28 +1155,117 @@ if __name__ == '__main__':
     )
 ```
 
-## 四、单元格类型
+### 4.3 批量下载图片（通用工具）
 
-支持写入特殊单元格类型：
+```python
+from fastfeishu.utils.common import batch_download_images, sync_batch_download_images
+
+# 异步批量下载（推荐）
+success_list, failed_list = await batch_download_images(
+    urls=["https://example.com/1.jpg", "https://example.com/2.png"],
+    qps=10,                              # 每秒最多10个请求
+    save_dir="./downloaded_images",      # 保存到本地
+    return_type="both",                  # 返回状态 + 二进制
+    failed_log_path="logs/failed.json",
+    headers={"Referer": "https://example.com"}
+)
+
+# 同步批量下载（在同步代码中使用）
+success_list, failed_list = sync_batch_download_images(
+    urls=["https://example.com/1.jpg", "https://example.com/2.png"],
+    qps=10,
+    save_dir="./downloaded_images",
+    return_type="binary"
+)
+```
+
+### 4.4 随机抽样工具
+
+```python
+from fastfeishu.utils.common import sample_from_array
+
+labels = ['[安全]', '[涉政]', '[安全]', '[涉政]', '[其他]']
+
+# 随机抽取3个（不按标签分组）
+result = sample_from_array(labels, label_config=None, max_samples=3)
+
+# 按指定字典抽取
+result = sample_from_array(labels, label_config={'[安全]': 2, '[涉政]': 1})
+
+# 针对所有独特标签，每种抽取最多2个
+result = sample_from_array(labels, label_config={}, max_samples=2)
+```
+
+---
+
+## 五、Sheet 管理
+
+### 5.1 创建和复制 Sheet
 
 ```python
 from fastfeishu.core import FeiShuSheet
-from fastfeishu.models.type import TextLink, Email, Formula
 
 if __name__ == '__main__':
     s = FeiShuSheet('飞书链接')
 
-    # 文本链接
-    s.write('a1', [[TextLink('https://example.com', '点击访问')]])
+    # 创建新 Sheet（在指定位置）
+    new_sheet = s.create_sheet(title='新Sheet', index=0)
+    print(f"新Sheet链接: {new_sheet.link}")
 
-    # 邮箱
-    s.write('b1', [[Email('test@example.com')]])
-
-    # 公式
-    s.write('c1', [[Formula('=A1+B1')]])
+    # 复制当前 Sheet
+    copied_sheet = s.copy(title='副本')
+    print(f"复制后的Sheet链接: {copied_sheet.link}")
 ```
 
-## 五、API 参考方法
+### 5.2 获取 Sheet 信息
+
+```python
+from fastfeishu.core import FeiShuSheet
+
+if __name__ == '__main__':
+    s = FeiShuSheet('飞书链接', readonly=True)
+
+    # 获取当前 Sheet 信息
+    info = s.get_sheet_info()
+    print(f"行数: {info['rowCount']}, 列数: {info['columnCount']}")
+
+    # 获取所有 Sheet 信息
+    sheets = s.get_sheets_info()
+    for sheet in sheets:
+        print(f"Sheet标题: {sheet.title}, ID: {sheet.sheetId}")
+
+    # 获取工作簿标题
+    workbook_title = s.get_workbook_title()
+    print(f"工作簿标题: {workbook_title}")
+
+    # 获取表头
+    header = s.get_header()
+    print(f"表头: {header}")
+```
+
+### 5.3 属性和状态
+
+```python
+from fastfeishu.core import FeiShuSheet
+
+if __name__ == '__main__':
+    s = FeiShuSheet('飞书链接', readonly=True)
+
+    # 检查是否只读
+    print(s.is_readonly())  # True
+
+    # 获取基础属性
+    print(s.sheet_token)   # Sheet Token
+    print(s.sheet_id)      # Sheet ID
+    print(s.link)          # 当前链接
+
+    # 获取原始请求对象（高级用法）
+    raw_req = s.raw_request
+```
+
+---
+
+## 六、API 参考方法
 
 ### FeiShuSheet 主要方法
 
@@ -935,32 +1277,40 @@ if __name__ == '__main__':
 - `read_column(column_name)` - 读取指定列（返回一维数组）
 - `read_image_column(column_name, start_row=2, end_row=None)` - 读取图片列（返回二进制数据列表）
 - `read_row(row_number, full_row=False, read_method=None)` - 读取指定行（返回字典）
-- `read_rows(row_number, full_row=False, read_method=None)` - 批量读取指定多行的数据（返回字典）
+- `read_rows(row_numbers, full_row=False, read_method=None)` - 批量读取指定多行的数据（返回字典）
+- `read_batch(ranges)` - 批量读取多个范围
 - `iterrows(start_row=2, end_row=None, batch_size=500, return_type=dict, columns=None, read_method=None)` - 流式迭代
 - `get_title()` - 获取标题
 - `get_header()` - 获取表头
+- `get_sheet_info()` - 获取当前 Sheet 信息
+- `get_sheets_info()` - 获取所有 Sheet 信息
+- `get_workbook_title()` - 获取工作簿标题
 
 **写入方法**:
 - `write(sheet_range, data_list)` - 写入范围
+- `write_batch(value_ranges)` - 批量写入多个范围
 - `write_row(data, write_row=2, skip_none=True, partition_strategy='auto')` - 写入行
 - `write_column(column_name, data_list, start_row=2)` - 写入列
 - `write_row_by_hang_header(hang_header_range, data, write_row=2, skip_none=True, partition_strategy='auto')` - 悬挂表头写入
 - `write_image(cell, image, image_name="cell.png")` - 写入图片
+- `append(sheet_range, data_list)` - 追加数据
 - `append_to_column(column_name, data_list)` - 追加写入列数据
+- `insert(sheet_range, data_list)` - 插入数据（在指定位置上方插入新行）
 
 **删除/插入方法**:
 - `delete_series(start_index, end_index)` - 删除行列
 - `delete_series_by_index(start_index, end_index)` - 按索引删除
-- `delete_column_by_name(start_col_name, end_col_name)` - 按列名删除
-- `insert_column_to_right(column_letter, insert_number=1)` - 右侧插入列
-- `insert_column_to_left(column_letter, insert_number=1)` - 左侧插入列
+- `delete_columns_by_name(start_col_name, end_col_name)` - 按列名删除
+- `insert_column_to_right(column_letter, insert_number=1, inherit_style=True)` - 右侧插入列
+- `insert_column_to_left(column_letter, insert_number=1, inherit_style=True)` - 左侧插入列
+- `insert_series(start_index, end_index, major_dimension, inherit_style)` - 插入行列
+- `append_series(add_count, major_dimension)` - 在末尾追加行列
 
 **高级方法**:
 - `get_index_by_col_name(col_name)` - 根据列名获取索引
 - `get_letter_by_col_name(col_name)` - 根据列名获取字母
 - `check_columns_exist(col_names)` - 检测列是否存在（返回字典）
 - `has_columns(col_names)` - 检测所有列是否都存在（返回布尔值）
-- `write_batch(value_ranges)` - 批量写入多个范围
 
 **图片方法**:
 - `download_image_to_path(file_token, save_path)` - 下载到路径
@@ -975,7 +1325,16 @@ if __name__ == '__main__':
 - `set_style(sheet_range, style)` - 设置单个范围的样式
 - `set_styles(data)` - 批量设置多个范围的样式
 
-## 六、异常处理
+**属性**:
+- `header` - 表头列表
+- `link` - 当前链接
+- `sheet_token` - Sheet Token
+- `sheet_id` - Sheet ID
+- `raw_request` - 原始请求对象（FeiShuRequest）
+
+---
+
+## 七、异常处理
 
 ```python
 from fastfeishu.exceptions import FeiShuException, FeiShuRequestException, FeiShuColumnNotExist
@@ -991,9 +1350,11 @@ except FeiShuException as e:
     print(f"飞书异常: {e}")
 ```
 
-## 七、测试
+---
 
-### 7.1 安装测试依赖
+## 八、测试
+
+### 8.1 安装测试依赖
 
 ```bash
 # 安装所有依赖（包括测试依赖）
@@ -1003,7 +1364,7 @@ pip install -r requirements.txt
 pip install -r requirements-dev.txt
 ```
 
-### 7.2 运行测试
+### 8.2 运行测试
 
 #### 运行所有测试
 
@@ -1047,7 +1408,7 @@ pytest tests/unit/test_request.py::TestFeiShuRequest::test_parse_feishu_url
 pytest -k "test_parse"
 ```
 
-### 7.3 查看测试覆盖率
+### 8.3 查看测试覆盖率
 
 ```bash
 # 生成HTML覆盖率报告
@@ -1056,7 +1417,7 @@ pytest --cov=fastfeishu --cov-report=html
 # 在浏览器中打开 htmlcov/index.html 查看详细报告
 ```
 
-### 7.4 编写自己的测试
+### 8.4 编写自己的测试
 
 #### 单元测试示例
 
@@ -1112,7 +1473,7 @@ def test_num_to_excel_col(input, expected):
     assert num_to_excel_col(input) == expected
 ```
 
-### 7.5 测试最佳实践
+### 8.5 测试最佳实践
 
 1. **测试命名规范**
    - 测试文件：`test_*.py`
@@ -1141,18 +1502,20 @@ def test_num_to_excel_col(input, expected):
    - 工具函数：>90%
    - 模型类：>70%
 
-### 7.6 测试标记说明
+### 8.6 测试标记说明
 
 - `@pytest.mark.unit` - 单元测试，不依赖外部服务
 - `@pytest.mark.integration` - 集成测试，需要真实API
 - `@pytest.mark.slow` - 慢速测试
 - `@pytest.mark.smoke` - 冒烟测试
 
-### 7.7 更多信息
+### 8.7 更多信息
 
 详细的测试指南请参考 [tests/README.md](tests/README.md)
 
-## 八、开发者指南
+---
+
+## 九、开发者指南
 
 如果你想参与项目开发，请查看以下文档：
 
@@ -1223,10 +1586,10 @@ utils/ (高级工具层)
 
 ---
 
-## 九、许可证
+## 十、许可证
 
 本项目采用 MIT 许可证。详见 [LICENSE](LICENSE) 文件。
 
-## 十、贡献
+## 十一、贡献
 
 欢迎贡献！请先阅读 **[开发者贡献指南](docs/CONTRIBUTING.md)** 了解如何参与项目开发。
