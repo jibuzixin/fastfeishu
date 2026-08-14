@@ -22,3 +22,4 @@ htmlcov/
 
 tmp*/
 dist/
+build/

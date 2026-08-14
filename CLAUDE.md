@@ -9,7 +9,7 @@ fastfeishu is a Python package for interacting with Feishu (Lark) Sheets API v3.
 **Tech Stack:** Python 3.11+, pydantic, pandas, aiohttp, requests, Pillow
 
 **Package Name:** fastfeishu
-**Current Version:** 1.3.1 (see `fastfeishu/__init__.py`)
+**Current Version:** 0.0.1a2 (see `fastfeishu/__init__.py`)
 
 ## Development Setup
 
@@ -39,13 +39,27 @@ Create `.env` file in project root:
 
 ### Running Tests
 ```bash
-# The tests directory contains example usage scripts, not automated tests
-# Run individual test files directly
-python3 tests/test_write_row_smart.py
-python3 tests/test_heuristic_accuracy.py
+# Run all tests
+pytest
+
+# Run only unit tests (fast, no API credentials needed)
+pytest -m unit
+
+# Run only integration tests (requires .env API credentials)
+pytest -m integration
+
+# Run with coverage report
+pytest --cov=fastfeishu --cov-report=html
+
+# Run specific test file
+pytest tests/unit/test_request.py
+
+# Run specific test class or method
+pytest tests/unit/test_request.py::TestFeiShuRequest
+pytest tests/unit/test_request.py::TestFeiShuRequest::test_parse_feishu_url
 ```
 
-**Note:** This project currently has no automated test suite. The `tests/` directory contains example scripts demonstrating API usage.
+**Note:** Integration tests require valid Feishu API credentials in `.env` file. Unit tests use mocks and run without network.
 
 ## Architecture
 
@@ -110,10 +124,12 @@ utils/ (advanced tools, can use core + models + helpers)
 - `FeiShuInterface` (`fastfeishu/core/interface.py`) - Abstract base class defining the contract
 - `FeiShuUtil` (`fastfeishu/utils/feishu_util.py`) - Utility class for batch processing across sheets
 - `SheetProperties` (`fastfeishu/models/sheet_properties.py`) - Builder pattern for sheet configuration
+- `CellStyle` (`fastfeishu/models/cell_style.py`) - Builder pattern for cell style configuration
+- `Font` (`fastfeishu/models/cell_style.py`) - Builder pattern for font configuration
 
 ### Design Patterns
 
-- **Builder Pattern:** `SheetProperties.Builder()`, `Protect.Builder()` for fluent configuration
+- **Builder Pattern:** `SheetProperties.Builder()`, `Protect.Builder()`, `CellStyle.Builder()`, `Font.Builder()` for fluent configuration
 - **Descriptor Pattern:** `FeishuVariable` descriptor for readonly property validation and type checking
 - **Protocol/ABC:** `FeiShuInterface` abstract base class enforces contract across implementations
 - **Singleton Pattern:** Thread-safe `get_feishu_property()` for config management
@@ -134,7 +150,7 @@ utils/ (advanced tools, can use core + models + helpers)
 
 **Readonly Mode**:
 - Set via `readonly=True` constructor parameter
-- Enforced by `FeishuVariable` descriptor on `spreadsheet_token`, `sheet_id`
+- Enforced by `FeiShuVariable` descriptor on `spreadsheet_token`, `sheet_id`
 - Prevents accidental writes to important sheets
 
 ## Configuration
@@ -194,6 +210,12 @@ s.write_row_by_hang_header(
     write_row=23,
     partition_strategy='auto'  # Optimize batch writes
 )
+
+# Batch write multiple ranges (performance optimization)
+s.write_batch([
+    {"range": "A2:B3", "values": [[1, 2], [3, 4]]},
+    {"range": "D2:E3", "values": [[5, 6], [7, 8]]},
+])
 ```
 
 ### Image Handling
@@ -233,6 +255,84 @@ FeiShuUtil.process_rows_to_new_sheet(
     row_handler=transform_handler,
     batch_write=2000
 )
+
+# Replace placeholders with type preservation
+FeiShuUtil.replace_placeholder(
+    sheet=s,
+    sheet_range='A1:A5',
+    name='张三',
+    age=25,
+    price=99.99
+)
+```
+
+### Cell Types (Rich Content)
+```python
+from fastfeishu.models.type import TextLink, Email, Formula, RichText, DateValue, MentionUser
+
+# Text link
+s.write('a1', [[TextLink('https://example.com', '点击访问')]])
+
+# Email
+s.write('b1', [[Email('test@example.com')]])
+
+# Formula
+s.write('c1', [[Formula('=A1+B1')]])
+
+# Date
+s.write('d1', [[DateValue.today()]])
+
+# Rich text with builder
+rich = (RichText.builder()
+        .add_plain("状态：")
+        .add_bold("成功")
+        .add_plain("，共")
+        .add_colored("100", "#00cc00")
+        .add_plain("条")
+        .build())
+s.write('e1', [[rich]])
+
+# @ user
+s.write('f1', [[MentionUser(user_info='user@example.com', text_type='email', notify=True)]])
+```
+
+### Batch Download Images (General Utility)
+```python
+from fastfeishu.utils.common import batch_download_images, sync_batch_download_images
+
+# Async batch download
+success_list, failed_list = await batch_download_images(
+    urls=["https://example.com/1.jpg", "https://example.com/2.png"],
+    qps=10,
+    save_dir="./downloaded_images",
+    return_type="both",
+    failed_log_path="logs/failed.json",
+    headers={"Referer": "https://example.com"}
+)
+
+# Sync wrapper for use in synchronous code
+success_list, failed_list = sync_batch_download_images(
+    urls=["https://example.com/1.jpg"],
+    qps=5,
+    save_dir="./images",
+    return_type="binary"
+)
+```
+
+### Sampling Utility
+```python
+from fastfeishu.utils.common import sample_from_array
+
+labels = ['[安全]', '[涉政]', '[安全]', '[涉政]', '[其他]']
+
+# Random sample 3 items
+result = sample_from_array(labels, label_config=None, max_samples=3)
+
+# Sample by label with specific counts
+result = sample_from_array(labels, label_config={'[安全]': 2, '[涉政]': 1})
+
+# Sample max 2 per unique label
+result = sample_from_array(labels, label_config={}, max_samples=2)
 ```
 
 ## Core Modules
@@ -248,14 +348,15 @@ FeiShuUtil.process_rows_to_new_sheet(
 
 **Models:**
 - `fastfeishu/models/sheet_properties.py` - `SheetProperties` and `Protect` with Builder pattern
-- `fastfeishu/models/cell_style.py` - `CellStyle` and `Font` with Builder pattern
-- `fastfeishu/models/type.py` - Special cell types (`TextLink`, `Email`, `Formula`, etc.)
+- `fastfeishu/models/cell_style.py` - `CellStyle`, `Font`, and `StyleRangeData`
+- `fastfeishu/models/type.py` - Special cell types (`TextLink`, `Email`, `Formula`, `RichText`, `MentionUser`, `MentionDoc`, `MultipleValue`, `DateValue`, etc.)
 - `fastfeishu/models/feishu_var.py` - `FeishuVariable` descriptor for property validation
 - `fastfeishu/models/feishu_cfg.py` - Configuration models
+- `fastfeishu/models/export_task.py` - Export task models (`ExportTaskRequest`, `ExportTaskResult`, etc.)
 
 **Utilities:**
 - `fastfeishu/utils/feishu_util.py` - `FeiShuUtil` for batch cross-sheet operations
-- `fastfeishu/utils/common.py` - High-level utilities including `batch_download_images()`, etc.
+- `fastfeishu/utils/common.py` - High-level utilities including `batch_download_images()`, `sample_from_array()`, etc.
 - `fastfeishu/utils/partition_grid.py` - Smart grid partitioning algorithm for optimized batch writes
 
 **Configuration:**
@@ -263,14 +364,15 @@ FeiShuUtil.process_rows_to_new_sheet(
 - `fastfeishu/configs/properties.yaml` - API endpoint definitions
 
 **Exceptions:**
-- `fastfeishu/exceptions/exception.py` - `FeiShuException`, `FeiShuRequestException`, `FeiShuColumnNotExist`, etc.
+- `fastfeishu/exceptions/exception.py` - `FeiShuException`, `FeiShuRequestException`, `FeiShuColumnNotExist`, `FeiShuStyleException`, etc.
 
 ## Common Development Patterns
 
 ### Adding New Cell Types
-1. Define new class in `fastfeishu/models/type.py` inheriting from base type
-2. Implement serialization to Feishu API format
-3. Document usage in README.md
+1. Define new class in `fastfeishu/models/type.py` inheriting from `FeiShuCellType`
+2. Implement `to_json()` method for serialization to Feishu API format
+3. Register in `CellTypeConverter.auto_convert()` if applicable
+4. Document usage in README.md
 
 ### Extending API Operations
 1. Add endpoint to `fastfeishu/configs/properties.yaml`

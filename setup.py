@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='fastfeishu',
-    version='0.0.1a1',
+    version='0.0.1a2',
     author='jibuzixin',
     author_email='this.jibuzixin@gmail.com',
     description='飞书文档快速操作API - 飞书（Lark）Sheets API v3 的高级 Python 封装',
