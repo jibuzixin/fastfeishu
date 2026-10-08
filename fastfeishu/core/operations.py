@@ -8,21 +8,11 @@ from fastfeishu.models.cell_style import StyleRangeData
 from fastfeishu.models.type import FeiShuCellImage, CellTypeConverter, FeiShuCellType
 from yarl import URL
 from pathlib import Path
-from PIL import Image
 
 from fastfeishu.core import FeiShuRequest
-from fastfeishu.exceptions.exception import FeiShuException, FeiShuRequestException, FeiShuStyleException
+from fastfeishu.exceptions.exception import FeiShuException, FeiShuStyleException
 from fastfeishu.helpers import match_row_num_by_range, match_col_letter_by_range, base64_image, num_to_excel_col, excel_col_to_num
 
-
-def _response_json(response: requests.Response) -> Dict[str, Any]:
-    response_json: Dict[str, Any] = response.json()
-    # TODO 增加通过栈获取是哪个请求调用的，方便记录
-    if response_json["code"] != 0:
-        raise FeiShuRequestException(f"\n>>>\tcode: {response_json['code']}"
-                                     f"\n>>>\tmsg: {response_json['msg']}"
-                                     f"\n>>>\t飞书通用异常情况查看：https://open.feishu.cn/document/server-docs/api-call-guide/generic-error-code")
-    return response_json
 
 class FeiShuSheetOperations:
     """对 FeiShuRequest 类方法做读写入口的前后处理，并返回适合处理的返回值"""
@@ -96,12 +86,8 @@ class FeiShuSheetOperations:
 
     # -------------------------------------- 其他操作 --------------------------------------------
     def get_sheet_metadata(self) -> Dict[str, Any]:
-        response = self._request.get_sheet_metadata()
-        if response["code"] != 0:
-            raise FeiShuRequestException(f"\n>>>\tcode: {response_json['code']}"
-                                         f"\n>>>\tmsg: {response_json['msg']}"
-                                         f"\n>>>\t飞书通用异常情况查看：https://open.feishu.cn/document/server-docs/api-call-guide/generic-error-code")
-        return response
+        # request 层 _raise_for_status 已完成 HTTP + 业务 code 校验，直接透传
+        return self._request.get_sheet_metadata()
 
     def get_workbook_title(self) -> Dict[str, Any]:
         return self.get_sheet_metadata()["data"]["properties"]["title"]
@@ -116,8 +102,7 @@ class FeiShuSheetOperations:
     # -------------------------------------- 写操作 --------------------------------------------
     def write(self, sheet_range: str, data_list: List[List[Any]]):
         self._deny_if_readonly()
-        response = self._request.write(sheet_range, data_list)
-        _response_json(response)
+        self._request.write(sheet_range, data_list)
         self._detect_header_modification(sheet_range)
 
     def write_batch(self, value_ranges: List[Dict[str, Any]]):
@@ -132,8 +117,7 @@ class FeiShuSheetOperations:
                 ]
         """
         self._deny_if_readonly()
-        response = self._request.write_batch(value_ranges)
-        _response_json(response)
+        self._request.write_batch(value_ranges)
 
         # 检测是否有任何范围修改了表头
         for value_range in value_ranges:
@@ -141,22 +125,19 @@ class FeiShuSheetOperations:
 
     def append(self, sheet_range, data_list, insert_data_option="OVERWRITE"):
         self._deny_if_readonly()
-        response = self._request.append(sheet_range, data_list, insert_data_option)
-        _response_json(response)
+        self._request.append(sheet_range, data_list, insert_data_option)
         self._detect_header_modification(sheet_range)
 
     def insert(self, sheet_range, data_list):
         """在电子表格工作表的指定范围的起始位置上方增加若干行，并在该范围中填充数据。"""
         self._deny_if_readonly()
-        response = self._request.insert(sheet_range, data_list)
-        _response_json(response)
+        self._request.insert(sheet_range, data_list)
         self._detect_header_modification(sheet_range)
 
     def delete_series(self, start_index: int, end_index: int, major_dimension: Literal["ROWS", "COLUMNS"] = "ROWS") -> int:
         """返回删除行或者列的数量"""
         self._deny_if_readonly()
-        response = self._request.delete_series(start_index, end_index, major_dimension)
-        del_count = _response_json(response)['data']['delCount']
+        del_count = self._request.delete_series(start_index, end_index, major_dimension).json()['data']['delCount']
         if major_dimension == "COLUMNS":
             self._alter_header = True
         return del_count
@@ -173,8 +154,7 @@ class FeiShuSheetOperations:
             Union[int, str]: 返回列字母索引或者插入后的总行数（最后一行/列）
         """
         self._deny_if_readonly()
-        response = self._request.append_series(add_count, major_dimension)
-        _response_json(response)
+        self._request.append_series(add_count, major_dimension)
         if major_dimension.upper() == "ROWS":
             return self.get_sheet_info()["rowCount"]
         else:
@@ -191,8 +171,7 @@ class FeiShuSheetOperations:
     ):
         """插入行列的入口方法，控制一些权限操作，所有插入行列高级抽象方法都引用此函数"""
         self._deny_if_readonly()
-        response = self._request.insert_series(start_index, end_index, major_dimension, inherit_style)
-        _response_json(response)
+        self._request.insert_series(start_index, end_index, major_dimension, inherit_style)
         if major_dimension.upper() == "COLUMNS":
             self._alter_header = True
 
@@ -205,29 +184,25 @@ class FeiShuSheetOperations:
         :param image_name: 图片名称
         """
         self._deny_if_readonly()
-        response = self._request.write_image(cell, image, image_name)
-        _response_json(response)
+        self._request.write_image(cell, image, image_name)
         self._detect_header_modification(f'{cell}:{cell}')
 
     def create_sheet(self, title: str, index: int = 0) -> Self:
         """返回新创建的 FeiShuSheet 对象"""
         self._deny_if_readonly()
-        response = self._request.create_sheet(title, index)
-        new_sheet_id = _response_json(response)["data"]["replies"][0]["addSheet"]["properties"]["sheetId"]
+        new_sheet_id = self._request.create_sheet(title, index).json()["data"]["replies"][0]["addSheet"]["properties"]["sheetId"]
         new_link = str(URL(self.link).update_query(sheet=new_sheet_id))
         return type(self)(new_link)
 
     def copy(self, title: str) -> Self:
         """复制当前 sheet ，返回新 sheet 对象"""
-        response = self._request.copy_sheet(title)
-        new_sheet_id = _response_json(response)["data"]["replies"][0]["copySheet"]["properties"]["sheetId"]
+        new_sheet_id = self._request.copy_sheet(title).json()["data"]["replies"][0]["copySheet"]["properties"]["sheetId"]
         new_link = str(URL(self.link).update_query(sheet=new_sheet_id))
         return type(self)(new_link)
 
     def update_sheet_properties(self, properties: SheetProperties):
         self._deny_if_readonly()
-        response = self._request.update_sheet_properties(properties)
-        _response_json(response)
+        self._request.update_sheet_properties(properties)
 
     # -------------------------------------- 设置样式 --------------------------------------------
     def set_style(self, sheet_range: str, style: Union[CellStyle, Dict[str, Any]]):
@@ -309,8 +284,7 @@ class FeiShuSheetOperations:
         # 如果是 CellStyle 对象，转为字典
         if isinstance(style, CellStyle):
             style = style.to_dict()
-        response = self._request.set_style(sheet_range, style)
-        _response_json(response)
+        self._request.set_style(sheet_range, style)
 
     def set_styles(self, data: List[Union[StyleRangeData, Union[CellStyle, Dict[str, Any]]]]):
         """
@@ -404,8 +378,7 @@ class FeiShuSheetOperations:
                 f"请减少范围或移除边框样式设置。"
             )
 
-        response = self._request.set_styles_batch_update(data)
-        _response_json(response)
+        self._request.set_styles_batch_update(data)
 
     # -------------------------------------- 读操作 --------------------------------------------
 
@@ -435,7 +408,7 @@ class FeiShuSheetOperations:
                 - 可选值为 FormattedString，此时接口将计算并对日期、时间、或时间日期类型的数据格式化并返回格式化后的字符串，但不会对数字进行格式化。
         """
         response = self._request.read(sheet_range, value_render_option, date_time_render_option)
-        return _response_json(response)["data"]["valueRange"]["values"]
+        return response.json()["data"]["valueRange"]["values"]
 
     def read_batch(
         self,
@@ -469,12 +442,12 @@ class FeiShuSheetOperations:
             }
         """
         response = self._request.read_batch(ranges, value_render_option, date_time_render_option)
-        return _response_json(response)["data"]
+        return response.json()["data"]
 
     def read_images(self, sheet_range) -> List[List[FeiShuCellType]]:
         """读取 sheet_range 单元格范围的图片信息"""
         response = self._request.read_images(sheet_range)
-        values = _response_json(response)["data"]["valueRange"]["values"]
+        values = response.json()["data"]["valueRange"]["values"]
 
         # 将图片类型转化为对应的实体类
         images = []
@@ -584,7 +557,13 @@ class FeiShuSheetOperations:
             # 小于阈值，无需压缩
             return base64_image(data)
 
-        # 3. 需要压缩 → 使用 Pillow
+        # 3. 需要压缩 → 使用 Pillow（可选依赖，仅在此处 lazy import）
+        try:
+            from PIL import Image
+        except ImportError as e:
+            raise FeiShuException(
+                "图片压缩功能需要安装 Pillow，请执行: pip install \"fastfeishu[image]\""
+            ) from e
         img = Image.open(BytesIO(data))
         # 保持原始格式（如果不支持保存的格式会自动转成合理格式）
         img_format = img.format or "JPEG"

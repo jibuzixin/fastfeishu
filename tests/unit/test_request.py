@@ -205,3 +205,83 @@ class TestFeiShuRequest:
 
         with pytest.raises(AttributeError):
             request.sheet_id = "NewSheetId"
+
+
+def _make_resp(status, body=None, *, reason="Bad Request", url="https://open.feishu.cn/x"):
+    """构造一个行为接近真实 requests.Response 的 Mock，用于 _raise_for_status 测试。"""
+    r = Mock(spec=requests.Response)
+    r.status_code = status
+    r.reason = reason
+    r.url = url
+    r.headers = {"content-type": "application/json"} if body is not None else {"content-type": "text/html"}
+    if body is None:
+        r.json.side_effect = ValueError("not json")
+        r.text = "<html>502 Bad Gateway</html>"
+    else:
+        r.json.return_value = body
+        r.text = ""
+    if status >= 400:
+        r.raise_for_status.side_effect = requests.HTTPError(f"{status} Client Error", response=r)
+    else:
+        r.raise_for_status.return_value = None
+    return r
+
+
+@pytest.mark.unit
+class TestRaiseForStatus:
+    """_raise_for_status 是唯一的响应错误检查点，锁住下沉后的行为，防回归。"""
+
+    def test_http_error_with_json_body_surfaces_code_msg(self):
+        """HTTP 4xx 但响应体是 JSON 时，应带出服务端 code/msg，而非只报 400。"""
+        req = FeiShuRequest.__new__(FeiShuRequest)
+        with pytest.raises(FeiShuException) as exc_info:
+            req._raise_for_status(_make_resp(400, {"code": 99991663, "msg": "request body format error"}))
+        msg = str(exc_info.value)
+        assert "HTTP 400" in msg
+        assert "99991663" in msg
+        assert "request body format error" in msg
+
+    def test_http_error_with_non_json_body_falls_back_to_text(self):
+        """HTTP 5xx 返回 HTML 时，回退到纯文本，不炸。"""
+        req = FeiShuRequest.__new__(FeiShuRequest)
+        with pytest.raises(FeiShuException, match="502 Bad Gateway"):
+            req._raise_for_status(_make_resp(502, None, reason="Bad Gateway"))
+
+    def test_business_code_nonzero_on_http200_raises(self):
+        """关键回归：HTTP 200 但业务 code != 0 时，request 层现在直接抛异常。
+
+        下沉前由 operations._response_json 抛；下沉后由 _raise_for_status 抛。
+        类型仍是 FeiShuException，保证向后兼容。
+        """
+        req = FeiShuRequest.__new__(FeiShuRequest)
+        with pytest.raises(FeiShuException) as exc_info:
+            req._raise_for_status(_make_resp(200, {"code": 99991668, "msg": "range format error"}))
+        msg = str(exc_info.value)
+        assert "99991668" in msg
+        assert "range format error" in msg
+
+    def test_http200_code_zero_passes(self):
+        """HTTP 200 + code 0 正常通过，不抛。"""
+        req = FeiShuRequest.__new__(FeiShuRequest)
+        # 不应抛
+        req._raise_for_status(_make_resp(200, {"code": 0, "msg": "success"}))
+
+    def test_check_body_false_skips_business_code(self):
+        """二进制下载传 check_body=False 时，即便 body 有 code 字段也不校验（流不解析）。"""
+        req = FeiShuRequest.__new__(FeiShuRequest)
+        # 假设一个 200 响应，body 里其实是个 dict（真实场景是二进制流，json 会抛）
+        # 这里验证 check_body=False 完全跳过 body 读取
+        resp = _make_resp(200, {"code": 9999, "msg": "should be ignored"})
+        resp.json.reset_mock(return_value=True, side_effect=True)
+        # 不论 body 是什么，check_body=False 都不应抛、不应读 json
+        req._raise_for_status(resp, check_body=False)
+        assert not resp.json.called, "check_body=False 不应读取响应体"
+
+    def test_check_body_false_still_raises_on_http_error(self):
+        """check_body=False 只跳过业务码校验，HTTP 错误仍照常抛。"""
+        req = FeiShuRequest.__new__(FeiShuRequest)
+        with pytest.raises(FeiShuException, match="HTTP 404"):
+            req._raise_for_status(
+                _make_resp(404, {"code": 99991663, "msg": "not found"}, reason="Not Found"),
+                check_body=False,
+            )

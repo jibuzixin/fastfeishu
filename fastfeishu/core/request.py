@@ -9,7 +9,7 @@ from requests import Response
 from fastfeishu.configs.settings import get_feishu_property
 from fastfeishu.models.type import Formula, FeiShuCellType
 from fastfeishu.helpers import base64_image, extract_filename_from_response
-from fastfeishu.exceptions.exception import FeiShuException
+from fastfeishu.exceptions.exception import FeiShuException, FeiShuRequestException
 from fastfeishu.models.feishu_var import FeishuVariable
 from datetime import datetime
 from decimal import Decimal
@@ -72,6 +72,65 @@ class FeiShuRequest:
         u = '/'.join([self.base_url, link_cfg,]).replace('//', '/')
         return u.replace(':/', '://')
 
+    def _raise_for_status(self, response: requests.Response, check_body: bool = True) -> None:
+        """
+        统一响应检查：HTTP 非 2xx 或业务 ``code != 0`` 时，抛出携带完整错误信息的
+        ``FeiShuRequestException``。这是本包唯一的响应错误检查点。
+
+        飞书 API 即便在 HTTP 4xx/5xx 时，响应体通常仍是 JSON，包含业务错误码
+        ``code`` 和错误描述 ``msg``。直接使用 ``response.raise_for_status()`` 只能
+        得到状态码（如 "400 Client Error"），丢失服务端的具体错误原因。
+
+        两种错误场景：
+        - **HTTP 非 2xx**：解析响应体（JSON 优先，否则回退纯文本），抛带 HTTP 状态码 +
+          业务 code + msg 的异常。
+        - **HTTP 200 但业务 ``code != 0``**：解析 JSON 响应体，抛带 code + msg 的异常。
+
+        Args:
+            response: ``requests.Response`` 对象
+            check_body: 是否在 HTTP 2xx 时进一步校验业务 ``code``。二进制流式下载
+                （图片 / 导出文件）的响应体不是 JSON，应传 ``False`` 仅做 HTTP 层校验，
+                避免触碰流。
+        """
+        try:
+            response.raise_for_status()
+        except requests.HTTPError:
+            code = msg = None
+            try:
+                body = response.json()
+                if isinstance(body, dict):
+                    code = body.get("code")
+                    msg = body.get("msg")
+            except ValueError:
+                # 响应体不是 JSON（如网关 5xx 返回 HTML 错误页），回退到纯文本
+                raw = (response.text or "").strip()
+                if raw:
+                    msg = raw[:500]
+            parts = [f"HTTP {response.status_code} {response.reason}"]
+            if code is not None:
+                parts.append(f"code: {code}")
+            if msg:
+                parts.append(f"msg: {msg}")
+            parts.append(f"url: {response.url}")
+            parts.append("飞书通用异常情况查看：https://open.feishu.cn/document/server-docs/api-call-guide/generic-error-code")
+            raise FeiShuRequestException("\n>>>\t" + "\n>>>\t".join(parts))
+
+        # HTTP 2xx：按需校验业务 code（二进制响应跳过）
+        if not check_body:
+            return
+        try:
+            body = response.json()
+        except ValueError:
+            # 非 JSON 响应（如纯文本），无业务 code 可查
+            return
+        if isinstance(body, dict) and body.get("code") not in (None, 0):
+            raise FeiShuRequestException(
+                f"\n>>>\tcode: {body.get('code')}"
+                f"\n>>>\tmsg: {body.get('msg')}"
+                f"\n>>>\turl: {response.url}"
+                f"\n>>>\t飞书通用异常情况查看：https://open.feishu.cn/document/server-docs/api-call-guide/generic-error-code"
+            )
+
     def get_sheet_metadata(self) -> Dict[str, Any]:
         url = self._build_url(
             self.link_sheets.metainfo
@@ -79,7 +138,7 @@ class FeiShuRequest:
             .human_repr()
         )
         response = requests.get(url, headers=self._get_request_headers())
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response.json()
 
     def get_sheet_info(self) -> Response:
@@ -89,7 +148,7 @@ class FeiShuRequest:
             .human_repr()
         )
         response = requests.get(url, headers=self._get_request_headers())
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response
 
     def read(
@@ -128,7 +187,7 @@ class FeiShuRequest:
             .human_repr(),
         )
         response = requests.get(url, headers=self._get_request_headers())
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response
 
     def read_batch(
@@ -194,7 +253,7 @@ class FeiShuRequest:
             .human_repr(),
         )
         response = requests.get(url, headers=self._get_request_headers())
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response
 
     def read_images(self, sheet_range: str) -> requests.Response:
@@ -235,7 +294,7 @@ class FeiShuRequest:
             }
         }
         response = requests.post(url, headers=self._get_request_headers(), data=json.dumps(body))
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response
 
     def _preprocess_data_grid(self, data_list: List[List[Any]]) -> List[List[Any]]:
@@ -301,7 +360,7 @@ class FeiShuRequest:
             }
         }
         response = requests.put(url, headers=self._get_request_headers(), data=json.dumps(body))
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response
 
     def write_batch(self, value_ranges: List[Dict[str, Any]]) -> requests.Response:
@@ -336,7 +395,7 @@ class FeiShuRequest:
         )
         body = {"valueRanges": processed_ranges}
         response = requests.post(url, headers=self._get_request_headers(), data=json.dumps(body))
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response
 
     def append(
@@ -369,7 +428,7 @@ class FeiShuRequest:
             }
         }
         response = requests.post(url, headers=self._get_request_headers(), data=json.dumps(body))
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response
 
     # def create_work(self, title: str, folder_token: str) -> requests.Response:
@@ -401,7 +460,7 @@ class FeiShuRequest:
             "requests": {"addSheet": {"properties": {"title": title, "index": index}}}
         }
         response = requests.post(url, headers=self._get_request_headers(), data=json.dumps(body))
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response
 
     def copy_sheet(self, title: str) -> requests.Response:
@@ -426,7 +485,7 @@ class FeiShuRequest:
             ]
         }
         response = requests.post(url, headers=self._get_request_headers(), data=json.dumps(body))
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response
 
     def update_sheet_properties(self, properties: SheetProperties) -> requests.Response:
@@ -452,7 +511,7 @@ class FeiShuRequest:
             ]
         }
         response = requests.post(url, headers=self._get_request_headers(), data=json.dumps(body))
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response
 
     def delete_series(
@@ -483,7 +542,7 @@ class FeiShuRequest:
             }
         }
         response = requests.delete(url, headers=self._get_request_headers(), data=json.dumps(body))
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response
 
     def append_series(
@@ -505,7 +564,7 @@ class FeiShuRequest:
             }
         }
         response = requests.post(url, headers=self._get_request_headers(), data=json.dumps(body))
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response
 
     def insert_series(
@@ -538,7 +597,7 @@ class FeiShuRequest:
             "inheritStyle": inherit_style,
         }
         response = requests.post(url, headers=self._get_request_headers(), data=json.dumps(body))
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response
 
     def write_image(
@@ -563,7 +622,7 @@ class FeiShuRequest:
             "name": image_name,
         }
         response = requests.post(url, data=json.dumps(body), headers=self._get_request_headers())
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response
 
     def download_media_raw(
@@ -591,7 +650,8 @@ class FeiShuRequest:
             stream=True,
             timeout=timeout,
         )
-        response.raise_for_status()
+        # 二进制流式下载：仅做 HTTP 层校验，不读 body（避免消耗流）
+        self._raise_for_status(response, check_body=False)
 
         filename = extract_filename_from_response(response)
 
@@ -627,7 +687,7 @@ class FeiShuRequest:
             }
         }
         response = requests.put(url, headers=self._get_request_headers(), data=json.dumps(body))
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response
 
     def set_styles_batch_update(self, data: List[Dict[str, Any]]) -> requests.Response:
@@ -670,7 +730,7 @@ class FeiShuRequest:
         )
         body = {"data": processed_data}
         response = requests.put(url, headers=self._get_request_headers(), data=json.dumps(body))
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response
 
     # ========== 导出任务相关方法 ==========
@@ -734,7 +794,7 @@ class FeiShuRequest:
             headers=self._get_request_headers(),
             data=json.dumps(body)
         )
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response
 
     def get_export_task_result(
@@ -774,7 +834,7 @@ class FeiShuRequest:
         )
 
         response = requests.get(url, headers=self._get_request_headers())
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response
 
     def download_export_file(
@@ -810,5 +870,6 @@ class FeiShuRequest:
         )
 
         response = requests.get(url, headers=self._get_request_headers())
-        response.raise_for_status()
+        # 二进制文件下载：仅做 HTTP 层校验，响应体是文件流不解析
+        self._raise_for_status(response, check_body=False)
         return response
