@@ -1,5 +1,5 @@
 from typing import Union, Dict, Any, List, Tuple, Literal
-import os, re, json, requests
+import os, re, json, requests, threading
 from typing import Union
 from urllib.parse import urlparse, parse_qs
 
@@ -9,13 +9,22 @@ from requests import Response
 from fastfeishu.configs.settings import get_feishu_property
 from fastfeishu.models.type import Formula, FeiShuCellType
 from fastfeishu.helpers import base64_image, extract_filename_from_response
-from fastfeishu.exceptions.exception import FeiShuException
+from fastfeishu.exceptions.exception import FeiShuException, FeiShuRequestException
 from fastfeishu.models.feishu_var import FeishuVariable
 from datetime import datetime
 from decimal import Decimal
 import math
 
 feishu_property = get_feishu_property().feishu  # 读取配置文件
+
+# tenant_access_token 失效相关错误码（来自飞书通用错误码文档）。
+# 命中任一码时，_do_request 会自动重新获取 tenant_access_token 并重试一次。
+#   99991663: tenant_access_token 过期/无效（主码，文档明确要求重新获取）
+#   99991665: invalid tenant code（tenant_access_token 非法）
+#   4001    : Invalid token, please refresh
+#   20013   : tenant access token invalid
+#   20005   : invalid access_token
+TENANT_TOKEN_EXPIRED_CODES = frozenset({99991663, 99991665, 4001, 20013, 20005})
 
 class FeiShuRequest:
     link = FeishuVariable(str, readonly_after_first_set=True)  # 保证初始化
@@ -29,7 +38,11 @@ class FeiShuRequest:
     link_export = feishu_property.links.export
 
     def __init__(self, link: str):
-        self.tat = self.get_tenant_token()
+        # 多线程并发命中 token 失效时，用锁 + 代际计数器去重，只刷新一次
+        self._tat_lock = threading.Lock()
+        self._tat_epoch = 0
+        self.tat = None
+        self.refresh_tenant_token()
         self.set_link(link)
 
     def get_tenant_token(self):
@@ -48,6 +61,74 @@ class FeiShuRequest:
             return r.json()["tenant_access_token"]
         except Exception as e:
             raise FeiShuException("Error happened when get tat token: %s" % e)
+
+    def refresh_tenant_token(self) -> None:
+        """手动重新获取 tenant_access_token 并更新 ``self.tat``。
+
+        供用户主动刷新鉴权；也由 ``_do_request`` 在检测到 token 失效错误码时
+        自动调用后重试一次。线程安全：内部加锁。
+        """
+        with self._tat_lock:
+            self.tat = self.get_tenant_token()
+            self._tat_epoch += 1
+
+    def _ensure_fresh_token(self, used_epoch: int) -> None:
+        """并发场景下 token 失效的去重刷新。
+
+        多个线程同时命中 token 失效码时，只让首个进锁的线程真正调用
+        ``get_tenant_token``；后续线程发现 ``_tat_epoch`` 已变（说明已被刷新过），
+        直接复用新 token，跳过重复刷新。``used_epoch`` 是本次失效请求所用 token
+        对应的代际，在请求发出前捕获。
+        """
+        with self._tat_lock:
+            if self._tat_epoch == used_epoch:
+                # 自我请求到进锁期间无人刷新 → 由我刷新
+                self.tat = self.get_tenant_token()
+                self._tat_epoch += 1
+            # 否则：已有其他线程刷新过，self.tat 已是最新，直接复用
+
+    def _do_request(
+        self,
+        method: str,
+        url: str,
+        *,
+        check_body: bool = True,
+        retry_on_auth: bool = True,
+        **kwargs,
+    ) -> requests.Response:
+        """统一 HTTP 入口：发起请求 + 响应校验 + token 失效自动重试一次。
+
+        所有业务请求方法都应通过此入口发送请求，以获得统一的错误处理与
+        ``tenant_access_token`` 失效自动刷新重试能力。
+
+        Args:
+            method: HTTP 方法，如 ``"GET"`` / ``"POST"`` / ``"PUT"`` / ``"DELETE"``
+            url: 完整请求 URL
+            check_body: 是否在 HTTP 2xx 时校验业务 ``code``。二进制流式下载
+                传 ``False`` 仅做 HTTP 层校验。
+            retry_on_auth: 是否在命中 token 失效码时刷新重试。重试调用时置 ``False``
+                防止无限递归。
+            **kwargs: 透传给 ``requests.request``（如 ``data`` / ``stream`` / ``timeout``）。
+                ``headers`` 缺省时用 ``_get_request_headers()``。
+        """
+        kwargs.setdefault("headers", self._get_request_headers())
+        used_epoch = self._tat_epoch  # 本次请求所用 token 的代际，用于并发去重
+        # 按动词派发到 requests.get/post/put/delete（而非 requests.request），
+        # 这样上层对具体动词的 mock 仍能生效
+        doer = getattr(requests, method.lower())
+        response = doer(url, **kwargs)
+        try:
+            self._raise_for_status(response, check_body=check_body)
+        except FeiShuRequestException as e:
+            if retry_on_auth and e.code in TENANT_TOKEN_EXPIRED_CODES:
+                # 并发下只刷新一次：若别的线程已刷新过（代际已变），则复用新 token
+                self._ensure_fresh_token(used_epoch)
+                kwargs["headers"] = dict(kwargs["headers"], Authorization=f"Bearer {self.tat}")
+                return self._do_request(
+                    method, url, check_body=check_body, retry_on_auth=False, **kwargs
+                )
+            raise
+        return response
 
     def set_link(self, link: str):
         self.link = link
@@ -72,15 +153,73 @@ class FeiShuRequest:
         u = '/'.join([self.base_url, link_cfg,]).replace('//', '/')
         return u.replace(':/', '://')
 
+    def _raise_for_status(self, response: requests.Response, check_body: bool = True) -> None:
+        """
+        统一响应检查：HTTP 非 2xx 或业务 ``code != 0`` 时，抛出携带完整错误信息的
+        ``FeiShuRequestException``。这是本包唯一的响应错误检查点。
+
+        飞书 API 即便在 HTTP 4xx/5xx 时，响应体通常仍是 JSON，包含业务错误码
+        ``code`` 和错误描述 ``msg``。直接使用 ``response.raise_for_status()`` 只能
+        得到状态码（如 "400 Client Error"），丢失服务端的具体错误原因。
+
+        两种错误场景：
+        - **HTTP 非 2xx**：解析响应体（JSON 优先，否则回退纯文本），抛带 HTTP 状态码 +
+          业务 code + msg 的异常。
+        - **HTTP 200 但业务 ``code != 0``**：解析 JSON 响应体，抛带 code + msg 的异常。
+
+        Args:
+            response: ``requests.Response`` 对象
+            check_body: 是否在 HTTP 2xx 时进一步校验业务 ``code``。二进制流式下载
+                （图片 / 导出文件）的响应体不是 JSON，应传 ``False`` 仅做 HTTP 层校验，
+                避免触碰流。
+        """
+        try:
+            response.raise_for_status()
+        except requests.HTTPError:
+            code = msg = None
+            try:
+                body = response.json()
+                if isinstance(body, dict):
+                    code = body.get("code")
+                    msg = body.get("msg")
+            except ValueError:
+                # 响应体不是 JSON（如网关 5xx 返回 HTML 错误页），回退到纯文本
+                raw = (response.text or "").strip()
+                if raw:
+                    msg = raw[:500]
+            parts = [f"HTTP {response.status_code} {response.reason}"]
+            if code is not None:
+                parts.append(f"code: {code}")
+            if msg:
+                parts.append(f"msg: {msg}")
+            parts.append(f"url: {response.url}")
+            parts.append("飞书通用异常情况查看：https://open.feishu.cn/document/server-docs/api-call-guide/generic-error-code")
+            raise FeiShuRequestException("\n>>>\t" + "\n>>>\t".join(parts), code=code)
+
+        # HTTP 2xx：按需校验业务 code（二进制响应跳过）
+        if not check_body:
+            return
+        try:
+            body = response.json()
+        except ValueError:
+            # 非 JSON 响应（如纯文本），无业务 code 可查
+            return
+        if isinstance(body, dict) and body.get("code") not in (None, 0):
+            raise FeiShuRequestException(
+                f"\n>>>\tcode: {body.get('code')}"
+                f"\n>>>\tmsg: {body.get('msg')}"
+                f"\n>>>\turl: {response.url}"
+                f"\n>>>\t飞书通用异常情况查看：https://open.feishu.cn/document/server-docs/api-call-guide/generic-error-code",
+                code=body.get("code"),
+            )
+
     def get_sheet_metadata(self) -> Dict[str, Any]:
         url = self._build_url(
             self.link_sheets.metainfo
             .format(SHEET_TOKEN=self.sheet_token)
             .human_repr()
         )
-        response = requests.get(url, headers=self._get_request_headers())
-        response.raise_for_status()
-        return response.json()
+        return self._do_request("GET", url).json()
 
     def get_sheet_info(self) -> Response:
         url = self._build_url(
@@ -88,9 +227,7 @@ class FeiShuRequest:
             .format(SHEET_TOKEN=self.sheet_token)
             .human_repr()
         )
-        response = requests.get(url, headers=self._get_request_headers())
-        response.raise_for_status()
-        return response
+        return self._do_request("GET", url)
 
     def read(
             self,
@@ -127,9 +264,7 @@ class FeiShuRequest:
             )
             .human_repr(),
         )
-        response = requests.get(url, headers=self._get_request_headers())
-        response.raise_for_status()
-        return response
+        return self._do_request("GET", url)
 
     def read_batch(
             self,
@@ -193,9 +328,7 @@ class FeiShuRequest:
             )
             .human_repr(),
         )
-        response = requests.get(url, headers=self._get_request_headers())
-        response.raise_for_status()
-        return response
+        return self._do_request("GET", url)
 
     def read_images(self, sheet_range: str) -> requests.Response:
         """
@@ -234,9 +367,7 @@ class FeiShuRequest:
                 "values": data_list,
             }
         }
-        response = requests.post(url, headers=self._get_request_headers(), data=json.dumps(body))
-        response.raise_for_status()
-        return response
+        return self._do_request("POST", url, data=json.dumps(body))
 
     def _preprocess_data_grid(self, data_list: List[List[Any]]) -> List[List[Any]]:
         """
@@ -300,9 +431,7 @@ class FeiShuRequest:
                 "values": data_list,
             }
         }
-        response = requests.put(url, headers=self._get_request_headers(), data=json.dumps(body))
-        response.raise_for_status()
-        return response
+        return self._do_request("PUT", url, data=json.dumps(body))
 
     def write_batch(self, value_ranges: List[Dict[str, Any]]) -> requests.Response:
         """
@@ -335,9 +464,7 @@ class FeiShuRequest:
             self.link_sheets.writeBatch.format(SHEET_TOKEN=self.sheet_token).human_repr(),
         )
         body = {"valueRanges": processed_ranges}
-        response = requests.post(url, headers=self._get_request_headers(), data=json.dumps(body))
-        response.raise_for_status()
-        return response
+        return self._do_request("POST", url, data=json.dumps(body))
 
     def append(
         self, sheet_range: str, data_list: List[List[Any]], insert_data_option="OVERWRITE",
@@ -368,9 +495,7 @@ class FeiShuRequest:
                 "values": data_list,
             }
         }
-        response = requests.post(url, headers=self._get_request_headers(), data=json.dumps(body))
-        response.raise_for_status()
-        return response
+        return self._do_request("POST", url, data=json.dumps(body))
 
     # def create_work(self, title: str, folder_token: str) -> requests.Response:
     #     """
@@ -400,9 +525,7 @@ class FeiShuRequest:
         body = {
             "requests": {"addSheet": {"properties": {"title": title, "index": index}}}
         }
-        response = requests.post(url, headers=self._get_request_headers(), data=json.dumps(body))
-        response.raise_for_status()
-        return response
+        return self._do_request("POST", url, data=json.dumps(body))
 
     def copy_sheet(self, title: str) -> requests.Response:
         """
@@ -425,9 +548,7 @@ class FeiShuRequest:
                 }
             ]
         }
-        response = requests.post(url, headers=self._get_request_headers(), data=json.dumps(body))
-        response.raise_for_status()
-        return response
+        return self._do_request("POST", url, data=json.dumps(body))
 
     def update_sheet_properties(self, properties: SheetProperties) -> requests.Response:
         """
@@ -451,9 +572,7 @@ class FeiShuRequest:
                 }
             ]
         }
-        response = requests.post(url, headers=self._get_request_headers(), data=json.dumps(body))
-        response.raise_for_status()
-        return response
+        return self._do_request("POST", url, data=json.dumps(body))
 
     def delete_series(
         self, start_index: int, end_index: int, major_dimension="ROWS"
@@ -482,9 +601,7 @@ class FeiShuRequest:
                 "endIndex": end_index,
             }
         }
-        response = requests.delete(url, headers=self._get_request_headers(), data=json.dumps(body))
-        response.raise_for_status()
-        return response
+        return self._do_request("DELETE", url, data=json.dumps(body))
 
     def append_series(
         self, add_count: int, major_dimension="ROWS"
@@ -504,9 +621,7 @@ class FeiShuRequest:
                 "length": add_count,
             }
         }
-        response = requests.post(url, headers=self._get_request_headers(), data=json.dumps(body))
-        response.raise_for_status()
-        return response
+        return self._do_request("POST", url, data=json.dumps(body))
 
     def insert_series(
         self, start_index: int, end_index: int, major_dimension="ROWS", inherit_style: str='',
@@ -537,9 +652,7 @@ class FeiShuRequest:
             },
             "inheritStyle": inherit_style,
         }
-        response = requests.post(url, headers=self._get_request_headers(), data=json.dumps(body))
-        response.raise_for_status()
-        return response
+        return self._do_request("POST", url, data=json.dumps(body))
 
     def write_image(
         self, cell: str, image: Union[str, bytes], image_name: str = "cell.png"
@@ -562,9 +675,7 @@ class FeiShuRequest:
             "image": base64_image(image),
             "name": image_name,
         }
-        response = requests.post(url, data=json.dumps(body), headers=self._get_request_headers())
-        response.raise_for_status()
-        return response
+        return self._do_request("POST", url, data=json.dumps(body))
 
     def download_media_raw(
         self,
@@ -585,13 +696,15 @@ class FeiShuRequest:
             image_down_url = image_down_url.with_query(extra=extra)
 
         url = self._build_url(image_down_url.human_repr())
-        response = requests.get(
-            url,
+        # 二进制流式下载：自定义鉴权头、stream、仅 HTTP 层校验（不读 body 避免消耗流）
+        # token 失效时 _do_request 会自动刷新并用新 token 重建 Authorization 头重试
+        response = self._do_request(
+            "GET", url,
             headers={"Authorization": f"Bearer {self.tat}"},
             stream=True,
             timeout=timeout,
+            check_body=False,
         )
-        response.raise_for_status()
 
         filename = extract_filename_from_response(response)
 
@@ -626,9 +739,7 @@ class FeiShuRequest:
                 "style": style,
             }
         }
-        response = requests.put(url, headers=self._get_request_headers(), data=json.dumps(body))
-        response.raise_for_status()
-        return response
+        return self._do_request("PUT", url, data=json.dumps(body))
 
     def set_styles_batch_update(self, data: List[Dict[str, Any]]) -> requests.Response:
         """
@@ -669,9 +780,7 @@ class FeiShuRequest:
             self.link_sheets.styleBatchUpdate.format(SHEET_TOKEN=self.sheet_token).human_repr(),
         )
         body = {"data": processed_data}
-        response = requests.put(url, headers=self._get_request_headers(), data=json.dumps(body))
-        response.raise_for_status()
-        return response
+        return self._do_request("PUT", url, data=json.dumps(body))
 
     # ========== 导出任务相关方法 ==========
 
@@ -729,13 +838,7 @@ class FeiShuRequest:
         if sub_id:
             body["sub_id"] = sub_id
 
-        response = requests.post(
-            url,
-            headers=self._get_request_headers(),
-            data=json.dumps(body)
-        )
-        response.raise_for_status()
-        return response
+        return self._do_request("POST", url, data=json.dumps(body))
 
     def get_export_task_result(
         self,
@@ -773,9 +876,7 @@ class FeiShuRequest:
             .human_repr()
         )
 
-        response = requests.get(url, headers=self._get_request_headers())
-        response.raise_for_status()
-        return response
+        return self._do_request("GET", url)
 
     def download_export_file(
         self,
@@ -809,6 +910,5 @@ class FeiShuRequest:
             .human_repr()
         )
 
-        response = requests.get(url, headers=self._get_request_headers())
-        response.raise_for_status()
-        return response
+        # 二进制文件下载：仅做 HTTP 层校验，响应体是文件流不解析
+        return self._do_request("GET", url, check_body=False)

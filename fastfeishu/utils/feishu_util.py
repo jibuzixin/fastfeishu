@@ -1,7 +1,8 @@
+from __future__ import annotations
+
 from ..core.interface import FeiShuInterface, IterableSheetProtocol
 from fastfeishu.helpers import num_to_excel_col, match_col_letter_by_range, match_row_num_by_range, excel_col_to_num
-from typing import Optional, Callable, List, Dict, Any, Union
-import pandas as pd
+from typing import Optional, Callable, List, Dict, Any
 
 class FeiShuUtil:
 
@@ -12,7 +13,7 @@ class FeiShuUtil:
         target_sheet: FeiShuInterface,  # 目标 sheet
         start_row: int = 2,  # 数据起始行（含），默认跳过表头
         end_row: Optional[int] = None,  # 数据结束行（含），None=全部
-        row_handler: Callable[[Union[pd.Series, Dict[str, Any]]], List[Dict[str, Any]]] = lambda row: [row],
+        row_handler: Callable[[Dict[str, Any]], List[Dict[str, Any]]] = lambda row: [row],
         batch_write: int = 2000,  # 每批写多少行
     ) -> FeiShuInterface:
         """
@@ -23,7 +24,7 @@ class FeiShuUtil:
                 target_sheet (FeiShuInterface): 目标 sheet，支持写入操作。
                 start_row (int, optional): 数据起始行（含），默认为 2，跳过表头。
                 end_row (Optional[int], optional): 数据结束行（含），默认为 None，表示处理全部行。
-                row_handler (Callable[[Union[pd.Series, Dict[str, Any]]], List[Dict[str, Any]]]): 每行数据的处理函数，
+                row_handler (Callable[[Dict[str, Any]], List[Dict[str, Any]]]): 每行数据的处理函数，
                     接收一行数据作为输入，返回一个包含字典的列表，每个字典代表一行数据。
                     默认为将每行数据转换为字典。
                 batch_read (int, optional): 每批读取的行数，默认为 1000。

@@ -1,12 +1,9 @@
-import pandas as pd
-
 from fastfeishu.core.operations import FeiShuSheetOperations
 from typing import Union, Any, Optional, List, Generator, Dict, Literal, Type, Tuple, Callable
 from fastfeishu.helpers import num_to_excel_col, match_row_num_by_range, match_col_letter_by_range, excel_col_to_num, cell_is_blank
 from fastfeishu.exceptions.exception import FeiShuColumnNotExist, FeiShuException
 from fastfeishu.core.interface import FeiShuInterface
 from fastfeishu.models.type import FeiShuCellType, FeiShuCellImage, FeiShuSheetInfo
-from fastfeishu.utils.partition_grid import partition_grid
 
 
 class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
@@ -205,9 +202,16 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
         column_name: str,
         data_list: List[Any],
         start_row: int=2,
+        skip_none: bool = False,
+        partition_strategy: Literal['horizontal', 'vertical', 'auto'] = 'auto',
     ):
         """
         根据列名写入一列数据，如果列存在则覆盖写入，不存在则在行或列的末尾追加一列然后写入。
+
+        Args:
+            skip_none: 是否跳过 None 值（默认 False）。True 时 None 位置的单元格不写入、
+                保留原内容，且行对齐不变（不紧凑）。语义同 write(skip_none=True)。
+            partition_strategy: 分区策略，仅在 skip_none=True 时生效。
         """
         # 1. 预处理数据为二维数组
         data_list = [[d] for d in data_list]
@@ -217,17 +221,29 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
             self.write(f'{col_letter}1:{col_letter}1', [[column_name]])  # 写入列名
         else:
             col_letter = self.get_letter_by_col_name(column_name)  # 列存在，获取列的字母索引
-        # 3. 找到对应的列，将处理好的数据写入
-        self.write(f'{col_letter}{start_row}:{col_letter}{len(data_list)+start_row-1}', data_list)
+        # 3. 找到对应的列，将处理好的数据写入（skip_none 透传给 write）
+        self.write(
+            f'{col_letter}{start_row}:{col_letter}{len(data_list)+start_row-1}',
+            data_list,
+            skip_none=skip_none,
+            partition_strategy=partition_strategy,
+        )
 
     def append_to_column(
         self,
         column_name: str,
-        data_list: List[Any]
+        data_list: List[Any],
+        skip_none: bool = False,
+        partition_strategy: Literal['horizontal', 'vertical', 'auto'] = 'auto',
     ):
-        """向指定列中写入数据，如果列中已有值，则追加写入"""
+        """向指定列中写入数据，如果列中已有值，则追加写入。
 
-        # 0. 此预处理是考虑到边界条件，如果原本此列已有值，需要追加。要将此列所有 None 改变为 ''
+        Args:
+            skip_none: 是否跳过 None 值（默认 False）。True 时 None 位置的单元格不写入、
+                保留其原内容，且**行对齐不变**——第 i 个值仍落在追加范围的第 i 行，
+                不剔除、不紧凑。False 时维持原行为（None 转空串走 append）。
+            partition_strategy: 分区策略，仅在 skip_none=True 时生效。
+        """
         col_letter = self.get_letter_by_col_name(column_name)
         total_row = self.get_sheet_info()["rowCount"]
         data = self.read(f'{col_letter}1:{col_letter}{total_row}', value_render_option='UnformattedValue')
@@ -240,18 +256,23 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
             blank_row_num += 1
         end_row_num = total_row - blank_row_num  # 获取最后一个有效数据的行数
 
-        # 1. 将 None 转化为 '' 字符串可以适配飞书 接口往后追加数据
-        data_list = [[d] if d is not None else ['']
-                     for d in data_list]
-
         # 2. 检查列是否存在。考虑此函数使用场景是向已有列中追加数据
         #    所以不自动创建，以免造成不明确的预期
         if column_name not in self.header:
             raise FeiShuColumnNotExist(column_name, f' 列不存在，请检查，先创建后写入')
 
-        # 3. 写入数据
         sheet_range = f'{col_letter}{end_row_num}:{col_letter}{len(data_list)+end_row_num-1}'
-        self.append(sheet_range, data_list)
+
+        if skip_none:
+            # 不把 None 写入表格，保留原位置（不紧凑）：分区写到追加范围
+            grid = [[d] for d in data_list]
+            self._write_grid_skip_none(
+                grid, end_row_num, excel_col_to_num(col_letter), partition_strategy
+            )
+        else:
+            # 传统：None 转空串适配飞书 append 接口往后追加
+            data_list = [[d] if d is not None else [''] for d in data_list]
+            self.append(sheet_range, data_list)
 
     def write_row(
         self,
@@ -420,41 +441,10 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
             self.write(cell_range, write_list)
             return
 
-        # 6. skip_none=True 时，使用智能分区批量写入
-        # 使用 partition_grid 将数据分成多个矩形区域
-        rectangles = partition_grid(write_list, strategy=partition_strategy)
-
-        if not rectangles:
-            # 没有有效数据，直接返回
-            return
-
-        # 7. 将矩形区域转换为批量写入格式
-        ranges_data = []
-        for rect in rectangles:
-            top_left = rect['top_left']  # (row_idx, col_idx)
-            bottom_right = rect['bottom_right']
-            values = rect['values']
-
-            # 计算实际的行列位置（相对于 actual_write_row 和 start_col）
-            rect_start_row = actual_write_row + top_left[0]
-            rect_end_row = actual_write_row + bottom_right[0]
-            rect_start_col = num_to_excel_col(start_col_num + top_left[1])
-            rect_end_col = num_to_excel_col(start_col_num + bottom_right[1])
-
-            # 构造范围字符串
-            range_str = f"{rect_start_col}{rect_start_row}:{rect_end_col}{rect_end_row}"
-
-            # 如果是横向矩形，values 是一维数组，需要转为二维
-            if rect['type'] == 'horizontal':
-                values = [values]
-
-            ranges_data.append({
-                "range": range_str,
-                "values": values
-            })
-
-        # 8. 使用批量写入 API
-        self.write_batch(ranges_data)
+        # 6. skip_none=True：分区批量写入，None 位置不覆盖、不紧凑（语义见 _write_grid_skip_none）
+        self._write_grid_skip_none(
+            write_list, actual_write_row, start_col_num, partition_strategy
+        )
 
     def insert_column_to_right(
         self,
@@ -868,7 +858,11 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
             selected_header = []
 
             for col in columns:
-                if isinstance(col, str) and col.isalpha() and col.isupper():
+                # 列字母必须是纯 ASCII 大写字母（如 'A', 'B', 'AA'）。
+                # 注意：不能只用 isalpha()+isupper()——中文字符 isalpha() 也为 True，
+                # 且 isupper() 忽略无大小写的中文，会导致 "测试URL" 这类中英混杂列名
+                # 被误判为列字母，进而 excel_col_to_num 算出天文列号、读到空范围。
+                if isinstance(col, str) and col.isascii() and col.isalpha() and col.isupper():
                     # 列字母（如 'A', 'B', 'AA'）
                     col_idx = excel_col_to_num(col)
                     col_indices.append(col_idx)

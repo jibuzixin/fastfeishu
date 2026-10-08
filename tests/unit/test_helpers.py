@@ -7,9 +7,11 @@ fastfeishu.helpers 模块的单元测试
 import pytest
 import tempfile
 import os
+import math
 from fastfeishu.helpers import (
     base64_image,
     extract_json_content,
+    cell_is_blank,
 )
 
 
@@ -63,6 +65,44 @@ class TestBase64Image:
         import base64
         decoded = base64.b64decode(result)
         assert decoded == test_data
+
+
+@pytest.mark.unit
+class TestCellIsBlank:
+    """cell_is_blank 函数的测试（移除 pandas 依赖后用 stdlib 实现，锁住行为）"""
+
+    def test_none_is_blank(self):
+        assert cell_is_blank(None) is True
+
+    def test_empty_string_is_blank(self):
+        assert cell_is_blank('') is True
+
+    def test_float_nan_is_blank(self):
+        assert cell_is_blank(float('nan')) is True
+
+    def test_numpy_nan_is_blank(self):
+        try:
+            import numpy as np
+        except ImportError:
+            pytest.skip("numpy 未安装")
+        # numpy 的 nan 也要被识别（isinstance(np.float64, float) 为真）
+        assert cell_is_blank(np.float64('nan')) is True
+
+    def test_zero_is_not_blank(self):
+        assert cell_is_blank(0) is False
+
+    def test_false_is_not_blank(self):
+        assert cell_is_blank(False) is False
+
+    def test_normal_string_is_not_blank(self):
+        assert cell_is_blank('hello') is False
+
+    def test_normal_int_is_not_blank(self):
+        assert cell_is_blank(42) is False
+
+    def test_whitespace_is_not_blank(self):
+        # 与原 pandas.isna 行为一致：纯空白串不是 nan，不是空串
+        assert cell_is_blank('  ') is False
 
 
 @pytest.mark.unit

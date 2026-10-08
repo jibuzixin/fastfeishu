@@ -70,10 +70,21 @@ cd fastfeishu
 conda create -n feishu python=3.11 -y
 conda activate feishu
 
-# 安装项目
+# 安装项目（核心依赖很轻量，约 4MB）
 cd fastfeishu
-pip install -e .
+pip install .
 ```
+
+**可选功能**（按需安装，避免装入不需要的重依赖）：
+
+```bash
+pip install ".[image]"      # 需要图片压缩（Pillow）：download_image_base64(compress=...)
+pip install ".[download]"   # 需要批量异步下载图片（aiohttp）：batch_download_images
+pip install ".[image,download]"  # 一次装齐
+```
+
+> 核心安装只含 `requests / PyYAML / yarl / pydantic_settings / python-dotenv`，
+> 不含 pandas/Pillow/aiohttp。调用未安装的可选功能时会给出友好的安装提示。
 
 ### 2. 环境变量配置
 
@@ -108,8 +119,8 @@ FS_APP_SECRET=''       # 飞书应用密钥
 │       ├── common.py               # 批量下载等高级功能
 │       ├── feishu_util.py          # FeiShuUtil 工具类
 │       └── partition_grid.py       # 网格分区算法
-├── requirements.txt                # 依赖列表
-├── setup.py                        # 项目元数据
+├── requirements.txt                # 核心依赖列表（与 pyproject.toml 同步）
+├── pyproject.toml                  # 项目元数据与依赖声明
 └── README.md                       # 说明文档
 ```
 
@@ -424,7 +435,20 @@ if __name__ == '__main__':
         ['数据3', '数据4'],
         # ... 更多行
     ])
+
+    # skip_none：不把 None 写进表格，保留该单元格的原有内容
+    # 注意：行/列对齐不变——None 的位置不写、不挪位、不紧凑
+    s.write('A2:C2', [[1, None, 3]], skip_none=True)
+    # -> 1 写入 A2，3 写入 C2（不是 B2），B2 的原值保留不变
 ```
+
+> **`skip_none` 语义（所有写方法统一）**：`skip_none=True` 表示**不把 None 值写进飞书表格**，
+> 保留 None 位置单元格的既有内容，且**不改变行列对齐**——第 (r,c) 个值仍落在原位置，
+> None 的格子直接跳过、不剔除、不紧凑。实现上用 `partition_grid` 把含 None 的网格切成
+> 若干"全非 None 矩形"按原位置批量写入。`skip_none=False`（默认）则用 None 覆盖对应单元格。
+> 支持 `skip_none` 的方法：`write` / `write_batch` / `write_column` / `append_to_column`
+> / `write_row` / `write_row_by_hang_header`。`partition_strategy` 仅在 `skip_none=True` 时生效
+> （`'auto'`/`'horizontal'`/`'vertical'`）。
 
 #### 批量写入多个范围
 
@@ -439,6 +463,12 @@ if __name__ == '__main__':
         {"range": "A2:B3", "values": [[1, 2], [3, 4]]},
         {"range": "D2:E3", "values": [[5, 6], [7, 8]]},
     ])
+
+    # skip_none=True：每个范围各自分区，None 位置不写、不紧凑
+    s.write_batch([
+        {"range": "A2:C2", "values": [[1, None, 3]]},
+    ], skip_none=True)
+    # -> 1 写入 A2，3 写入 C2，B2 保留原值
 ```
 
 #### 追加数据
@@ -478,6 +508,10 @@ if __name__ == '__main__':
 
     # 从指定行开始写入
     s.write_column("自动化", [1, 2, 3, 4, 5, 6, 7, 8], start_row=4)
+
+    # skip_none=True：None 行不写、保留原内容、行对齐不变（不紧凑）
+    s.write_column("自动化", [1, None, 3], start_row=2, skip_none=True)
+    # -> 1 写入第 2 行，3 写入第 4 行（第 3 行原值保留）
 ```
 
 #### 按列名追加写入列数据（不会自动新建列）
@@ -492,6 +526,10 @@ if __name__ == '__main__':
     # 假设原列数据是: [1, 4, 5, 6, None, yes, '', None, '', None, None]
     s.append_to_column("自动化", [1, 2, 3])
     # 写入后变为: [1, 4, 5, 6, None, yes, '', None, '', 1, 2, 3]
+
+    # skip_none=True：None 位置不写、行对齐不变（不剔除、不紧凑）
+    s.append_to_column("自动化", [1, None, 3], skip_none=True)
+    # -> 1 和 3 追加到列尾的原位置，None 的那行不写、不挪位
 ```
 
 #### 按列名写入行（支持字典或二维数组）
@@ -1085,7 +1123,6 @@ if __name__ == '__main__':
 from fastfeishu.core import FeiShuSheet
 from fastfeishu.utils import FeiShuUtil
 from typing import List, Dict, Any
-import pandas as pd
 
 if __name__ == '__main__':
     source_sheet = FeiShuSheet('源Sheet链接')
@@ -1095,11 +1132,13 @@ if __name__ == '__main__':
     FeiShuUtil.process_rows_to_new_sheet(source_sheet, target_sheet)
 
     # 自定义行处理函数
-    def even_insert_handler(row: pd.Series) -> List[Dict[str, Any]]:
-        if row.name % 2 == 0:  # 偶数行
-            empty = {k: None for k in row.index}
-            return [empty, empty, row.to_dict()]  # 插2空行 + 原行
-        return []  # 奇数行丢弃
+    # row_handler 接收一行数据（dict），返回要写入的行列表（每个元素是一个 dict）
+    def even_insert_handler(row: Dict[str, Any]) -> List[Dict[str, Any]]:
+        # row 是字典，如 {"CaseID": 1, "query": "...", "预期APIINFO": "..."}
+        if row.get("CaseID") % 2 == 0:  # 偶数 CaseID
+            empty = {k: None for k in row}  # 与原行同结构的空行
+            return [empty, empty, row]      # 插2空行 + 原行
+        return []  # 其他行丢弃
 
     FeiShuUtil.process_rows_to_new_sheet(
         source_sheet,
@@ -1126,7 +1165,6 @@ if __name__ == '__main__':
 from fastfeishu.core import FeiShuSheet
 from fastfeishu.utils import FeiShuUtil
 from typing import Generator
-import pandas as pd
 
 if __name__ == '__main__':
     source_sheet = FeiShuSheet('源Sheet链接')
@@ -1287,14 +1325,14 @@ if __name__ == '__main__':
 - `get_workbook_title()` - 获取工作簿标题
 
 **写入方法**:
-- `write(sheet_range, data_list)` - 写入范围
-- `write_batch(value_ranges)` - 批量写入多个范围
+- `write(sheet_range, data_list, skip_none=False, partition_strategy='auto')` - 写入范围
+- `write_batch(value_ranges, skip_none=False, partition_strategy='auto')` - 批量写入多个范围
 - `write_row(data, write_row=2, skip_none=True, partition_strategy='auto')` - 写入行
-- `write_column(column_name, data_list, start_row=2)` - 写入列
+- `write_column(column_name, data_list, start_row=2, skip_none=False, partition_strategy='auto')` - 写入列
 - `write_row_by_hang_header(hang_header_range, data, write_row=2, skip_none=True, partition_strategy='auto')` - 悬挂表头写入
+- `append_to_column(column_name, data_list, skip_none=False, partition_strategy='auto')` - 追加写入列数据
 - `write_image(cell, image, image_name="cell.png")` - 写入图片
 - `append(sheet_range, data_list)` - 追加数据
-- `append_to_column(column_name, data_list)` - 追加写入列数据
 - `insert(sheet_range, data_list)` - 插入数据（在指定位置上方插入新行）
 
 **删除/插入方法**:
@@ -1325,6 +1363,9 @@ if __name__ == '__main__':
 - `set_style(sheet_range, style)` - 设置单个范围的样式
 - `set_styles(data)` - 批量设置多个范围的样式
 
+**鉴权**（通过 `s.raw_request` 访问）:
+- `refresh_tenant_token()` - 手动重新获取 tenant_access_token（日常无需调用，token 失效会自动刷新重试）
+
 **属性**:
 - `header` - 表头列表
 - `link` - 当前链接
@@ -1345,10 +1386,60 @@ try:
 except FeiShuColumnNotExist as e:
     print(f"列不存在: {e}")
 except FeiShuRequestException as e:
-    print(f"请求异常: {e}")
+    print(f"请求异常: {e}")  # e.code 可拿到业务错误码（HTTP 错误但响应体非 JSON 时为 None）
 except FeiShuException as e:
     print(f"飞书异常: {e}")
 ```
+
+### 7.1 tenant_access_token 自动刷新
+
+`tenant_access_token` 有效期约 2 小时，过期后调用接口会返回 token 失效错误码。
+fastfeishu 在 request 层统一处理：当响应命中以下飞书通用错误码时，**自动重新获取
+token 并重试一次**（只重试一次，避免无限循环），对调用方完全透明：
+
+| 错误码 | 含义 |
+|--------|------|
+| `99991663` | tenant_access_token 过期/无效（主码） |
+| `99991665` | invalid tenant code |
+| `4001` | Invalid token, please refresh |
+| `20013` | tenant access token invalid |
+| `20005` | invalid access_token |
+
+如果你希望主动控制（例如长时间运行的任务前预刷新），可调用手动刷新方法：
+
+```python
+from fastfeishu.core import FeiShuSheet
+
+s = FeiShuSheet('飞书链接')
+s.raw_request.refresh_tenant_token()   # 手动重新获取 tenant_access_token
+```
+
+> 自动重试通过统一 HTTP 入口 `_do_request` 实现，所有读写/下载方法均受益；
+> 二进制流式下载（图片、导出文件）在 token 失效时同样会刷新重试，且不会消耗响应流。
+>
+> **线程安全**：多线程共享同一个 `FeiShuSheet` 实例时，若并发命中 token 失效，
+> 内部用锁 + 代际计数器去重，只刷新一次，其余线程直接复用新 token，避免重复刷新。
+
+### 7.2 自定义触发刷新的错误码
+
+触发自动刷新的错误码集合定义在 `fastfeishu.core.request.TENANT_TOKEN_EXPIRED_CODES`（默认为上表 5 个码）。
+**无需改源码**，运行时重新赋值即可对后续所有请求立即生效（`_do_request` 每次都查模块全局对象）：
+
+```python
+import fastfeishu.core.request as ff_req
+
+# 增加一个码（frozenset | 返回新集合）
+ff_req.TENANT_TOKEN_EXPIRED_CODES = ff_req.TENANT_TOKEN_EXPIRED_CODES | {91402}
+
+# 移除一个码
+ff_req.TENANT_TOKEN_EXPIRED_CODES = ff_req.TENANT_TOKEN_EXPIRED_CODES - {4001}
+
+# 完全自定义
+ff_req.TENANT_TOKEN_EXPIRED_CODES = frozenset({99991663})
+```
+
+> 这段代码只需在创建 `FeiShuSheet` 之前执行一次即可，整个进程内的请求都会用新集合。
+> `frozenset` 是不可变类型，必须整体重新赋值，不能 `.add()`。
 
 ---
 
@@ -1357,11 +1448,12 @@ except FeiShuException as e:
 ### 8.1 安装测试依赖
 
 ```bash
-# 安装所有依赖（包括测试依赖）
+# 安装核心依赖 + 开发测试工具（pytest 等）
 pip install -r requirements.txt
-
-# 或者只安装开发测试依赖
 pip install -r requirements-dev.txt
+
+# 建议同时安装可选功能依赖，以便跑通图片压缩 / 批量下载相关代码路径
+pip install ".[image,download]"
 ```
 
 ### 8.2 运行测试

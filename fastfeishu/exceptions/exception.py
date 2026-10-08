@@ -8,8 +8,11 @@ class FeiShuException(Exception):
 
 class FeiShuRequestException(FeiShuException):
     """飞书 API 发送请求异常"""
-    def __init__(self, message):
+    def __init__(self, message, code: int | None = None):
         super().__init__(message)
+        # 业务错误码（来自响应体 code 字段），HTTP 错误但响应体非 JSON 时为 None。
+        # 供上层（如 _do_request 的 token 失效重试）按码判断处理。
+        self.code = code
 
 class FeiShuColumnNotExist(FeiShuException):
     """飞书列不存在"""

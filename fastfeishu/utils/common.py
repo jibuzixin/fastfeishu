@@ -1,8 +1,9 @@
+from __future__ import annotations
+
 import asyncio
-import aiohttp
 import time
 import os
-from typing import List, Optional, Tuple, Literal, Dict, Any, Union
+from typing import List, Optional, Tuple, Literal, Dict, Any, Union, TYPE_CHECKING
 import logging
 import random
 import json
@@ -16,6 +17,10 @@ from fastfeishu.helpers import (
     base64_image,
     extract_json_content
 )
+
+if TYPE_CHECKING:
+    # aiohttp 仅用于批量下载（可选依赖），类型注解在此守卫，运行时按需 lazy import
+    import aiohttp
 
 # 配置日志（可选，也可以外部传入 logger）
 logging.basicConfig(level=logging.INFO)
@@ -35,25 +40,25 @@ def sample_from_array(labels_array, label_config=None, max_samples=None):
 
     示例使用:
     >>> labels = ['[安全]', '[涉政]', '[安全]', '[涉政]', '[其他]']
-    
+
     # 随机抽取1个（两者均为 None）
     >>> sample_from_array(labels)
     {'[安全]': [0]}  # 输出示例，实际随机
-    
+
     # 随机抽取3个总个数，不按标签分组
     >>> sample_from_array(labels, label_config=None, max_samples=3)
     {'[安全]': [2], '[涉政]': [1, 3]}  # 输出示例，实际随机
-    
+
     # 按指定字典抽取
     >>> sample_from_array(labels, label_config={'[安全]': 2, '[涉政]': 1})
     {'[安全]': [0, 2], '[涉政]': [3]}  # 输出示例，实际随机
-    
+
     # 针对所有独特标签，每种抽取最多2个
     >>> sample_from_array(labels, label_config={}, max_samples=2)
     {'[安全]': [0, 2], '[涉政]': [1, 3], '[其他]': [4]}  # 输出示例，实际随机
     """
     result = {}
-    
+
     if label_config is None:
         result = []
         # 随机抽取总个数，不按标签分组
@@ -81,11 +86,11 @@ def sample_from_array(labels_array, label_config=None, max_samples=None):
                 result[label] = sampled_indices
     else:
         raise ValueError("label_config must be None or dict")
-    
+
     # 对每个标签的索引列表排序，以保持一致性
     for label in result:
         result[label].sort()
-    
+
     return result
 
 
@@ -144,26 +149,34 @@ async def batch_download_images(
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
     批量下载图片函数-异步
-    
+
     Args:
         urls: 图片URL列表
         qps: 每秒请求数限制（最大并发数）
         save_dir: 保存目录，为None时不保存到本地
-        return_type: 
+        return_type:
             "success"  -> 只返回成功/失败状态
             "binary"   -> 只返回二进制内容（适合直接上传云端）
             "both"     -> 返回状态 + 二进制（推荐）
         failed_log_path: 失败日志保存路径（json格式）
         filename_template: 文件命名模板，支持 {index}, {timestamp}, {name}
         headers: 自定义请求头（如需要referer、user-agent等）
-    
+
     Returns:
         success_list: 成功下载的列表
         failed_list: 失败的列表（会自动写入 failed_log_path）
     """
     if return_type in ["success", "both"] and save_dir and not os.path.exists(save_dir):
         os.makedirs(save_dir)
-    
+
+    # aiohttp 是可选依赖（批量下载图片才需要），在此 lazy import 给出友好提示
+    try:
+        import aiohttp
+    except ImportError as e:
+        raise ImportError(
+            "批量下载图片功能需要安装 aiohttp，请执行: pip install \"fastfeishu[download]\""
+        ) from e
+
     semaphore = asyncio.Semaphore(qps)
     timeout = aiohttp.ClientTimeout(total=60)
     default_headers = {
@@ -171,21 +184,21 @@ async def batch_download_images(
     }
     if headers:
         default_headers.update(headers)
-    
+
     connector = aiohttp.TCPConnector(limit=qps * 2, limit_per_host=10)
     async with aiohttp.ClientSession(headers=default_headers, timeout=timeout, connector=connector) as session:
         tasks = []
         for idx, url in enumerate(urls):
             task = _download_image(session, url, semaphore)
             tasks.append((idx, url, task))
-        
+
         success_list = []
         failed_list = []
-        
+
         # 并发执行所有任务
         for idx, url, task in tasks:
             success, msg, content, real_ext = await task
-            
+
             # 生成文件名
             original_filename = os.path.basename(url.split('?')[0].split('#')[0])
             name_without_ext = os.path.splitext(original_filename)[0] or f"image_{idx}"
@@ -200,9 +213,9 @@ async def batch_download_images(
                 timestamp=timestamp,
                 name=safe_name
             ) + ".jpg"
-            
+
             save_path = os.path.join(save_dir, filename) if save_dir else None
-            
+
             result = {
                 "index": idx,
                 "url": url,
@@ -210,7 +223,7 @@ async def batch_download_images(
                 "save_path": save_path,
                 "timestamp": int(time.time()),
             }
-            
+
             if success:
                 if return_type in ['success', 'both'] and save_dir and content:
                     with open(save_path, 'wb') as f:
@@ -223,14 +236,14 @@ async def batch_download_images(
                 result["error"] = msg
                 failed_list.append(result)
                 logger.error(f"× 下载失败: {msg}")
-        
+
         # 保存失败日志（可用于重试）
         if failed_list:
             os.makedirs(os.path.dirname(os.path.abspath(failed_log_path)), exist_ok=True)
             with open(failed_log_path, 'w', encoding='utf-8') as f:
                 json.dump(failed_list, f, ensure_ascii=False, indent=2)
             logger.info(f"失败记录已保存至: {failed_log_path}（共 {len(failed_list)} 条）")
-        
+
         return success_list, failed_list
 
 
@@ -270,7 +283,7 @@ async def example_batch_download():
         r"https://ssai-online-data-1.bj.bcebos.com/ssai-tech/ssai-biz03/livis/tars-image-history/20251214/3397113544816640001/5cde147b-daba-430b-ae57-be735c66e307-3?authorization=bce-auth-v1%2FALTAKgz7347Tk617o7HQeoqifH%2F2025-12-14T02%3A57%3A17Z%2F315360000%2Fhost%2Fd59e820974475cc3af1ff99badaaf979b1b82a7a8fd4d96c28f8b9d57c5f26f2",
         r"https://ssai-online-data-1.bj.bcebos.com/ssai-tech/ssai-biz03/livis/tars-image-history/20251212/3913326932869292034/502f06d4-91fe-47e0-b43d-da2682cc9002-0?authorization=bce-auth-v1%2FALTAKgz7347Tk617o7HQeoqifH%2F2025-12-12T11%3A35%3A30Z%2F315360000%2Fhost%2F876a3dbcd2c5e8175600e3249c5c81aa97b5bf1759b7b8b897c936ed5b2ea17c"
     ]
-    
+
     success, failed = await batch_download_images(
         urls=urls,
         qps=5,                              # 每秒最多5个请求
@@ -279,10 +292,10 @@ async def example_batch_download():
         failed_log_path="logs/failed_2025.json",
         headers={"Referer": "https://google.com"}  # 防盗链
     )
-    
+
     print(f"成功: {len(success)} 张")
     print(f"失败: {len(failed)} 张")
-    
+
     # 示例：直接上传成功图片到云端（这里仅演示）
     for item in success:
         binary_data = item.get("data")
