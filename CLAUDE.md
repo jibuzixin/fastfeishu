@@ -9,7 +9,7 @@ fastfeishu is a Python package for interacting with Feishu (Lark) Sheets API v3.
 **Tech Stack:** Python 3.11+, pydantic, pandas, aiohttp, requests, Pillow
 
 **Package Name:** fastfeishu
-**Current Version:** 0.0.1a2 (see `fastfeishu/__init__.py`)
+**Current Version:** 0.1.0 (see `fastfeishu/__init__.py`)
 
 ## Development Setup
 
