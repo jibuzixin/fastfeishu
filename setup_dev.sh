@@ -99,9 +99,9 @@ main() {
         print_warning "未找到 requirements-dev.txt 文件"
     fi
 
-    # 安装项目本身（可编辑模式）
-    print_step "   正在安装 fastfeishu 包（可编辑模式）..."
-    python3 -m pip install -e . -q
+    # 安装项目本身（可编辑模式，含可选功能依赖 image/download）
+    print_step "   正在安装 fastfeishu 包（可编辑模式 + 可选依赖）..."
+    python3 -m pip install -e ".[image,download]" -q
     print_success "fastfeishu 包安装完成"
 
     # 步骤 3: 安装 pre-commit

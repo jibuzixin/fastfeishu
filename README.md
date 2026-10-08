@@ -70,10 +70,21 @@ cd fastfeishu
 conda create -n feishu python=3.11 -y
 conda activate feishu
 
-# 安装项目
+# 安装项目（核心依赖很轻量，约 4MB）
 cd fastfeishu
-pip install -e .
+pip install .
 ```
+
+**可选功能**（按需安装，避免装入不需要的重依赖）：
+
+```bash
+pip install ".[image]"      # 需要图片压缩（Pillow）：download_image_base64(compress=...)
+pip install ".[download]"   # 需要批量异步下载图片（aiohttp）：batch_download_images
+pip install ".[image,download]"  # 一次装齐
+```
+
+> 核心安装只含 `requests / PyYAML / yarl / pydantic_settings / python-dotenv`，
+> 不含 pandas/Pillow/aiohttp。调用未安装的可选功能时会给出友好的安装提示。
 
 ### 2. 环境变量配置
 
@@ -108,8 +119,8 @@ FS_APP_SECRET=''       # 飞书应用密钥
 │       ├── common.py               # 批量下载等高级功能
 │       ├── feishu_util.py          # FeiShuUtil 工具类
 │       └── partition_grid.py       # 网格分区算法
-├── requirements.txt                # 依赖列表
-├── setup.py                        # 项目元数据
+├── requirements.txt                # 核心依赖列表（与 pyproject.toml 同步）
+├── pyproject.toml                  # 项目元数据与依赖声明
 └── README.md                       # 说明文档
 ```
 
@@ -1085,7 +1096,6 @@ if __name__ == '__main__':
 from fastfeishu.core import FeiShuSheet
 from fastfeishu.utils import FeiShuUtil
 from typing import List, Dict, Any
-import pandas as pd
 
 if __name__ == '__main__':
     source_sheet = FeiShuSheet('源Sheet链接')
@@ -1095,11 +1105,13 @@ if __name__ == '__main__':
     FeiShuUtil.process_rows_to_new_sheet(source_sheet, target_sheet)
 
     # 自定义行处理函数
-    def even_insert_handler(row: pd.Series) -> List[Dict[str, Any]]:
-        if row.name % 2 == 0:  # 偶数行
-            empty = {k: None for k in row.index}
-            return [empty, empty, row.to_dict()]  # 插2空行 + 原行
-        return []  # 奇数行丢弃
+    # row_handler 接收一行数据（dict），返回要写入的行列表（每个元素是一个 dict）
+    def even_insert_handler(row: Dict[str, Any]) -> List[Dict[str, Any]]:
+        # row 是字典，如 {"CaseID": 1, "query": "...", "预期APIINFO": "..."}
+        if row.get("CaseID") % 2 == 0:  # 偶数 CaseID
+            empty = {k: None for k in row}  # 与原行同结构的空行
+            return [empty, empty, row]      # 插2空行 + 原行
+        return []  # 其他行丢弃
 
     FeiShuUtil.process_rows_to_new_sheet(
         source_sheet,
@@ -1126,7 +1138,6 @@ if __name__ == '__main__':
 from fastfeishu.core import FeiShuSheet
 from fastfeishu.utils import FeiShuUtil
 from typing import Generator
-import pandas as pd
 
 if __name__ == '__main__':
     source_sheet = FeiShuSheet('源Sheet链接')
@@ -1357,11 +1368,12 @@ except FeiShuException as e:
 ### 8.1 安装测试依赖
 
 ```bash
-# 安装所有依赖（包括测试依赖）
+# 安装核心依赖 + 开发测试工具（pytest 等）
 pip install -r requirements.txt
-
-# 或者只安装开发测试依赖
 pip install -r requirements-dev.txt
+
+# 建议同时安装可选功能依赖，以便跑通图片压缩 / 批量下载相关代码路径
+pip install ".[image,download]"
 ```
 
 ### 8.2 运行测试
