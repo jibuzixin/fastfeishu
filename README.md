@@ -435,7 +435,20 @@ if __name__ == '__main__':
         ['数据3', '数据4'],
         # ... 更多行
     ])
+
+    # skip_none：不把 None 写进表格，保留该单元格的原有内容
+    # 注意：行/列对齐不变——None 的位置不写、不挪位、不紧凑
+    s.write('A2:C2', [[1, None, 3]], skip_none=True)
+    # -> 1 写入 A2，3 写入 C2（不是 B2），B2 的原值保留不变
 ```
+
+> **`skip_none` 语义（所有写方法统一）**：`skip_none=True` 表示**不把 None 值写进飞书表格**，
+> 保留 None 位置单元格的既有内容，且**不改变行列对齐**——第 (r,c) 个值仍落在原位置，
+> None 的格子直接跳过、不剔除、不紧凑。实现上用 `partition_grid` 把含 None 的网格切成
+> 若干"全非 None 矩形"按原位置批量写入。`skip_none=False`（默认）则用 None 覆盖对应单元格。
+> 支持 `skip_none` 的方法：`write` / `write_batch` / `write_column` / `append_to_column`
+> / `write_row` / `write_row_by_hang_header`。`partition_strategy` 仅在 `skip_none=True` 时生效
+> （`'auto'`/`'horizontal'`/`'vertical'`）。
 
 #### 批量写入多个范围
 
@@ -450,6 +463,12 @@ if __name__ == '__main__':
         {"range": "A2:B3", "values": [[1, 2], [3, 4]]},
         {"range": "D2:E3", "values": [[5, 6], [7, 8]]},
     ])
+
+    # skip_none=True：每个范围各自分区，None 位置不写、不紧凑
+    s.write_batch([
+        {"range": "A2:C2", "values": [[1, None, 3]]},
+    ], skip_none=True)
+    # -> 1 写入 A2，3 写入 C2，B2 保留原值
 ```
 
 #### 追加数据
@@ -489,6 +508,10 @@ if __name__ == '__main__':
 
     # 从指定行开始写入
     s.write_column("自动化", [1, 2, 3, 4, 5, 6, 7, 8], start_row=4)
+
+    # skip_none=True：None 行不写、保留原内容、行对齐不变（不紧凑）
+    s.write_column("自动化", [1, None, 3], start_row=2, skip_none=True)
+    # -> 1 写入第 2 行，3 写入第 4 行（第 3 行原值保留）
 ```
 
 #### 按列名追加写入列数据（不会自动新建列）
@@ -503,6 +526,10 @@ if __name__ == '__main__':
     # 假设原列数据是: [1, 4, 5, 6, None, yes, '', None, '', None, None]
     s.append_to_column("自动化", [1, 2, 3])
     # 写入后变为: [1, 4, 5, 6, None, yes, '', None, '', 1, 2, 3]
+
+    # skip_none=True：None 位置不写、行对齐不变（不剔除、不紧凑）
+    s.append_to_column("自动化", [1, None, 3], skip_none=True)
+    # -> 1 和 3 追加到列尾的原位置，None 的那行不写、不挪位
 ```
 
 #### 按列名写入行（支持字典或二维数组）
@@ -1298,14 +1325,14 @@ if __name__ == '__main__':
 - `get_workbook_title()` - 获取工作簿标题
 
 **写入方法**:
-- `write(sheet_range, data_list)` - 写入范围
-- `write_batch(value_ranges)` - 批量写入多个范围
+- `write(sheet_range, data_list, skip_none=False, partition_strategy='auto')` - 写入范围
+- `write_batch(value_ranges, skip_none=False, partition_strategy='auto')` - 批量写入多个范围
 - `write_row(data, write_row=2, skip_none=True, partition_strategy='auto')` - 写入行
-- `write_column(column_name, data_list, start_row=2)` - 写入列
+- `write_column(column_name, data_list, start_row=2, skip_none=False, partition_strategy='auto')` - 写入列
 - `write_row_by_hang_header(hang_header_range, data, write_row=2, skip_none=True, partition_strategy='auto')` - 悬挂表头写入
+- `append_to_column(column_name, data_list, skip_none=False, partition_strategy='auto')` - 追加写入列数据
 - `write_image(cell, image, image_name="cell.png")` - 写入图片
 - `append(sheet_range, data_list)` - 追加数据
-- `append_to_column(column_name, data_list)` - 追加写入列数据
 - `insert(sheet_range, data_list)` - 插入数据（在指定位置上方插入新行）
 
 **删除/插入方法**:

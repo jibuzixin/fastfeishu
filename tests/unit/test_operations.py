@@ -295,3 +295,111 @@ class TestDownloadImageBase64Compress:
                 sys.modules["PIL"] = original_mod
             else:
                 sys.modules.pop("PIL", None)
+
+
+def _make_ops():
+    """构造一个绕过 HTTP 初始化的 FeiShuSheetOperations，_request 为 Mock。"""
+    ops = FeiShuSheetOperations.__new__(FeiShuSheetOperations)
+    ops._request = Mock()
+    ops._readonly = False
+    ops._alter_header = False  # 避免表头检测副作用
+    ops._header = None
+    return ops
+
+
+def _flatten_ranges(ranges_data):
+    """把 write_batch 收到的 [{range, values}] 展平成 {(col, row): value}。"""
+    from fastfeishu.helpers import match_col_letter_by_range, match_row_num_by_range, excel_col_to_num
+    written = {}
+    for item in ranges_data:
+        start_col, end_col = match_col_letter_by_range(item["range"])
+        start_row, end_row = match_row_num_by_range(item["range"])
+        sc, ec = excel_col_to_num(start_col), excel_col_to_num(end_col)
+        sr, er = int(start_row), int(end_row)
+        values = item["values"]
+        for r in range(er - sr + 1):
+            row_vals = values[r] if r < len(values) else []
+            for c in range(ec - sc + 1):
+                v = row_vals[c] if c < len(row_vals) else None
+                written[(num_to_excel_col(sc + c), sr + r)] = v
+    return written
+
+
+from fastfeishu.helpers import num_to_excel_col  # 供 _flatten_ranges 使用
+
+
+@pytest.mark.unit
+class TestSkipNone:
+    """skip_none 语义回归：不写 None 单元格、保留原位置、不紧凑。"""
+
+    def test_write_default_no_skip_none_calls_write(self):
+        """skip_none=False（默认）走单范围 write，写全部数据含 None。"""
+        ops = _make_ops()
+        data = [[1, None, 3], [None, 5, None]]
+        ops.write("A2:C3", data)  # 默认 skip_none=False
+        assert ops._request.write.called
+        assert not ops._request.write_batch.called
+        # 原数据原样传给 write
+        sent_range, sent_data = ops._request.write.call_args[0]
+        assert sent_range == "A2:C3"
+        assert sent_data == data
+
+    def test_write_skip_none_excludes_none_preserves_position(self):
+        """skip_none=True：None 格子不写，非 None 值落在原列位置（不紧凑）。"""
+        ops = _make_ops()
+        # (0,0)=1 -> A2; (0,2)=3 -> C2; (1,1)=5 -> B3。None 位置 B2/A3/C3 不写
+        data = [[1, None, 3], [None, 5, None]]
+        ops.write("A2:C3", data, skip_none=True)
+        assert not ops._request.write.called
+        assert ops._request.write_batch.called
+        written = _flatten_ranges(ops._request.write_batch.call_args[0][0])
+        assert written == {("A", 2): 1, ("C", 2): 3, ("B", 3): 5}, (
+            f"None 应被跳过、位置不变，实际写入: {written}"
+        )
+
+    def test_write_skip_none_no_compaction(self):
+        """核心语义（用户强调）：[[1, None, 3]] -> 1 在 A1，3 在 C1，不是 A1/B1。"""
+        ops = _make_ops()
+        ops.write("A1:C1", [[1, None, 3]], skip_none=True)
+        written = _flatten_ranges(ops._request.write_batch.call_args[0][0])
+        assert written == {("A", 1): 1, ("C", 1): 3}, (
+            f"None 位置不紧凑：3 应在 C1 而非 B1，实际: {written}"
+        )
+
+    def test_write_batch_default_no_skip_none(self):
+        """write_batch skip_none=False 原样透传。"""
+        ops = _make_ops()
+        value_ranges = [{"range": "A2:B3", "values": [[1, None], [None, 4]]}]
+        ops.write_batch(value_ranges)
+        assert ops._request.write_batch.call_args[0][0] is value_ranges
+
+    def test_write_batch_skip_none_expands_and_excludes_none(self):
+        """write_batch skip_none=True：每个范围分区展开，None 不写、位置不变。"""
+        ops = _make_ops()
+        value_ranges = [{"range": "A2:C2", "values": [[1, None, 3]]}]
+        ops.write_batch(value_ranges, skip_none=True)
+        # 走 _request.write_batch（write_batch 内部最终调用），且只含非 None
+        written = _flatten_ranges(ops._request.write_batch.call_args[0][0])
+        assert written == {("A", 2): 1, ("C", 2): 3}, f"实际: {written}"
+        # 确保没有 None 被写进去
+        assert None not in written.values()
+
+    def test_write_skip_none_all_none_no_write(self):
+        """全 None 数据 skip_none=True 时不触发任何写入。"""
+        ops = _make_ops()
+        ops.write("A2:B3", [[None, None], [None, None]], skip_none=True)
+        assert not ops._request.write.called
+        # write_batch 可能被调但 ranges_data 为空 -> partition_grid 返回空时不调用
+        assert not ops._request.write_batch.called
+
+    def test_write_grid_skip_none_helper_preserves_position(self):
+        """直接测 helper：N×1 列数据，None 行不写、不紧凑。"""
+        ops = _make_ops()
+        # 列数据：第 0 行=1，第 1 行=None，第 2 行=3；起始 B5
+        grid = [[1], [None], [3]]
+        ops._write_grid_skip_none(grid, start_row=5, start_col_num=2, partition_strategy='auto')
+        written = _flatten_ranges(ops._request.write_batch.call_args[0][0])
+        # 1 -> B5，3 -> B7；B6 不写
+        assert written == {("B", 5): 1, ("B", 7): 3}, (
+            f"列方向也保持行对齐不紧凑，实际: {written}"
+        )

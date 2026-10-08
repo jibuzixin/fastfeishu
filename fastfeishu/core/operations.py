@@ -12,6 +12,7 @@ from pathlib import Path
 from fastfeishu.core import FeiShuRequest
 from fastfeishu.exceptions.exception import FeiShuException, FeiShuStyleException
 from fastfeishu.helpers import match_row_num_by_range, match_col_letter_by_range, base64_image, num_to_excel_col, excel_col_to_num
+from fastfeishu.utils.partition_grid import partition_grid
 
 
 class FeiShuSheetOperations:
@@ -100,12 +101,77 @@ class FeiShuSheetOperations:
         return None
 
     # -------------------------------------- 写操作 --------------------------------------------
-    def write(self, sheet_range: str, data_list: List[List[Any]]):
+    def _write_grid_skip_none(
+        self,
+        data_list: List[List[Any]],
+        start_row: int,
+        start_col_num: int,
+        partition_strategy: str = 'auto',
+    ) -> None:
+        """将二维数据中非 None 的单元格分区后批量写入飞书表格。
+
+        skip_none 的语义：**不把 None 值写进表格**，保留 None 位置单元格的既有内容，
+        且**不改变行/列对齐**——第 (r,c) 个值仍落在 (start_row+r, start_col+c)，
+        None 的格子直接跳过、不挪位、不紧凑。实现上用 ``partition_grid`` 把含 None
+        的网格切成若干"全非 None 的矩形"，每个矩形按原位置转成一个 range 走
+        ``write_batch`` 写入。
+        """
+        rectangles = partition_grid(data_list, strategy=partition_strategy)
+        if not rectangles:
+            return
+        ranges_data = []
+        for rect in rectangles:
+            top_left = rect['top_left']
+            bottom_right = rect['bottom_right']
+            values = rect['values']
+            rect_start_row = start_row + top_left[0]
+            rect_end_row = start_row + bottom_right[0]
+            rect_start_col = num_to_excel_col(start_col_num + top_left[1])
+            rect_end_col = num_to_excel_col(start_col_num + bottom_right[1])
+            range_str = f"{rect_start_col}{rect_start_row}:{rect_end_col}{rect_end_row}"
+            # 横向矩形 values 是一维，需转成二维
+            if rect['type'] == 'horizontal':
+                values = [values]
+            ranges_data.append({"range": range_str, "values": values})
+        self.write_batch(ranges_data)
+
+    def write(
+        self,
+        sheet_range: str,
+        data_list: List[List[Any]],
+        skip_none: bool = False,
+        partition_strategy: Literal['horizontal', 'vertical', 'auto'] = 'auto',
+    ):
+        """
+        向单个范围写入数据。单次写入不得超过 5000 行、100 列。
+
+        Args:
+            sheet_range: 写入范围，如 'A2:B5'
+            data_list: 二维数组
+            skip_none: 是否跳过 None 值（默认 False，保持向后兼容）。
+                - False: 用 None 覆盖对应单元格（传统行为）
+                - True: 不写 None 单元格，保留其原有内容；行/列对齐不变，不紧凑
+            partition_strategy: 分区策略，仅在 skip_none=True 时生效
+        """
         self._deny_if_readonly()
-        self._request.write(sheet_range, data_list)
+        if not skip_none:
+            self._request.write(sheet_range, data_list)
+            self._detect_header_modification(sheet_range)
+            return
+        # skip_none=True：解析起始行列，分区批量写入
+        start_col, _ = match_col_letter_by_range(sheet_range)
+        start_row, _ = match_row_num_by_range(sheet_range)
+        self._write_grid_skip_none(
+            data_list, int(start_row), excel_col_to_num(start_col), partition_strategy
+        )
         self._detect_header_modification(sheet_range)
 
-    def write_batch(self, value_ranges: List[Dict[str, Any]]):
+    def write_batch(
+        self,
+        value_ranges: List[Dict[str, Any]],
+        skip_none: bool = False,
+        partition_strategy: Literal['horizontal', 'vertical', 'auto'] = 'auto',
+    ):
         """
         向多个范围批量写入数据。
 
@@ -115,9 +181,52 @@ class FeiShuSheetOperations:
                     {"range": "A2:B5", "values": [[1,2], [3,4], [5,6], [7,8]]},
                     {"range": "D2:E3", "values": [[9,10], [11,12]]}
                 ]
+            skip_none: 是否跳过 None 值（默认 False）。True 时每个 item 的网格各自
+                分区展开为若干无 None 的子矩形，按原位置写入，None 格子不写、不紧凑。
+            partition_strategy: 分区策略，仅在 skip_none=True 时生效
         """
         self._deny_if_readonly()
-        self._request.write_batch(value_ranges)
+        if not skip_none:
+            self._request.write_batch(value_ranges)
+            return
+        # skip_none=True：把每个范围分区展开，汇总后一次性批量写入
+        expanded = []
+        for item in value_ranges:
+            start_col, _ = match_col_letter_by_range(item["range"])
+            start_row, _ = match_row_num_by_range(item["range"])
+            sub = self._expand_grid_skip_none(
+                item["values"], int(start_row), excel_col_to_num(start_col), partition_strategy
+            )
+            expanded.extend(sub)
+        if expanded:
+            self._request.write_batch(expanded)
+
+    def _expand_grid_skip_none(
+        self,
+        data_list: List[List[Any]],
+        start_row: int,
+        start_col_num: int,
+        partition_strategy: str = 'auto',
+    ) -> List[Dict[str, Any]]:
+        """``_write_grid_skip_none`` 的不写出版本：只返回 ranges_data，不触发写入。
+
+        供 ``write_batch(skip_none=True)`` 汇总多个范围后一次性写入用。
+        """
+        rectangles = partition_grid(data_list, strategy=partition_strategy)
+        ranges_data = []
+        for rect in rectangles:
+            top_left = rect['top_left']
+            bottom_right = rect['bottom_right']
+            values = rect['values']
+            range_str = (
+                f"{num_to_excel_col(start_col_num + top_left[1])}{start_row + top_left[0]}"
+                f":{num_to_excel_col(start_col_num + bottom_right[1])}{start_row + bottom_right[0]}"
+            )
+            if rect['type'] == 'horizontal':
+                values = [values]
+            ranges_data.append({"range": range_str, "values": values})
+        return ranges_data
+
 
         # 检测是否有任何范围修改了表头
         for value_range in value_ranges:
