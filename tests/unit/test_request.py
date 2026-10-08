@@ -285,3 +285,207 @@ class TestRaiseForStatus:
                 _make_resp(404, {"code": 99991663, "msg": "not found"}, reason="Not Found"),
                 check_body=False,
             )
+
+
+@pytest.mark.unit
+class TestDoRequestTokenRetry:
+    """_do_request 的 token 失效自动刷新重试 + 手动刷新 + 并发去重回归测试。"""
+
+    def _make_request(self, tat="old_tat"):
+        """构造一个绕过 HTTP 初始化的 FeiShuRequest，初始化锁与代际计数器。
+
+        把 get_tenant_token 打 spy：_ensure_fresh_token 内部会调它刷新。
+        """
+        import threading
+        req = FeiShuRequest.__new__(FeiShuRequest)
+        req._tat_lock = threading.Lock()
+        req._tat_epoch = 0
+        req.tat = tat
+        req.sheet_token = "T"
+        req.sheet_id = "S"
+        # 默认 spy：刷新时把 tat 换成新值
+        req.get_tenant_token = Mock()
+        return req
+
+    def _spy_refresh(self, req, new_tat="new_tat"):
+        """让 get_tenant_token 返回新 token（_ensure_fresh_token 会用它的返回值赋给 tat）。"""
+        req.get_tenant_token.return_value = new_tat
+
+    def test_business_token_expired_triggers_refresh_and_retry(self):
+        """HTTP 200 + code 99991663 -> 刷新 token -> 用新 token 重试 -> 成功。"""
+        req = self._make_request()
+        self._spy_refresh(req, "new_tat")
+        err_resp = _make_resp(200, {"code": 99991663, "msg": "token expired"}, reason="OK")
+        ok_resp = _make_resp(200, {"code": 0, "msg": "ok", "data": {}}, reason="OK")
+
+        with patch("fastfeishu.core.request.requests.get", side_effect=[err_resp, ok_resp]) as mock_get:
+            resp = req._do_request("GET", "https://x")
+
+        assert resp is ok_resp
+        assert mock_get.call_count == 2  # 原始 + 1 次重试
+        req.get_tenant_token.assert_called_once()
+        # 重试请求的 Authorization 头用了刷新后的 token
+        retry_headers = mock_get.call_args_list[1].kwargs["headers"]
+        assert retry_headers["Authorization"] == "Bearer new_tat"
+
+    def test_http_error_with_token_code_triggers_retry(self):
+        """HTTP 401 + body code 99991663 同样触发刷新重试。"""
+        req = self._make_request()
+        self._spy_refresh(req, "new_tat")
+        err_resp = _make_resp(401, {"code": 99991663, "msg": "invalid token"}, reason="Unauthorized")
+        ok_resp = _make_resp(200, {"code": 0, "msg": "ok"}, reason="OK")
+
+        with patch("fastfeishu.core.request.requests.get", side_effect=[err_resp, ok_resp]) as mock_get:
+            resp = req._do_request("GET", "https://x")
+
+        assert resp is ok_resp
+        assert mock_get.call_count == 2
+        req.get_tenant_token.assert_called_once()
+
+    def test_non_token_error_no_refresh_no_retry(self):
+        """普通业务错误码（非 token 失效）不刷新、不重试，直接抛。"""
+        req = self._make_request()
+        err_resp = _make_resp(200, {"code": 1254000, "msg": "some business error"}, reason="OK")
+
+        with patch("fastfeishu.core.request.requests.get", return_value=err_resp) as mock_get:
+            with pytest.raises(FeiShuException) as exc_info:
+                req._do_request("GET", "https://x")
+
+        assert exc_info.value.code == 1254000
+        assert mock_get.call_count == 1
+        req.get_tenant_token.assert_not_called()
+
+    def test_retry_only_once_then_raise(self):
+        """重试后仍失效只重试一次，第二次失败直接抛，不无限递归。"""
+        req = self._make_request()
+        self._spy_refresh(req, "new_tat")
+        err_resp = _make_resp(200, {"code": 99991663, "msg": "still expired"}, reason="OK")
+
+        with patch("fastfeishu.core.request.requests.get", return_value=err_resp) as mock_get:
+            with pytest.raises(FeiShuException) as exc_info:
+                req._do_request("GET", "https://x")
+
+        assert exc_info.value.code == 99991663
+        assert mock_get.call_count == 2  # 原始 + 1 次重试，不再多
+        req.get_tenant_token.assert_called_once()
+
+    @pytest.mark.parametrize("code", [99991663, 99991665, 4001, 20013, 20005])
+    def test_each_token_expired_code_triggers_retry(self, code):
+        """所有 tenant token 失效码都触发刷新重试。"""
+        req = self._make_request()
+        self._spy_refresh(req, "new_tat")
+        err_resp = _make_resp(200, {"code": code, "msg": "x"}, reason="OK")
+        ok_resp = _make_resp(200, {"code": 0, "msg": "ok"}, reason="OK")
+
+        with patch("fastfeishu.core.request.requests.get", side_effect=[err_resp, ok_resp]) as mock_get:
+            req._do_request("GET", "https://x")
+
+        assert mock_get.call_count == 2
+        req.get_tenant_token.assert_called_once()
+
+    def test_refresh_tenant_token_updates_tat(self):
+        """手动刷新方法把新 token 写入 self.tat，并推进代际。"""
+        req = FeiShuRequest.__new__(FeiShuRequest)
+        import threading
+        req._tat_lock = threading.Lock()
+        req._tat_epoch = 0
+        req.tat = None
+        with patch.object(FeiShuRequest, "get_tenant_token", return_value="fresh_tat"):
+            req.refresh_tenant_token()
+        assert req.tat == "fresh_tat"
+        assert req._tat_epoch == 1
+
+    def test_binary_download_retries_on_token_expired(self):
+        """二进制下载（check_body=False）命中 token 失效码也刷新重试，且不读 body。"""
+        req = self._make_request()
+        self._spy_refresh(req, "new_tat")
+        # HTTP 200 + body 含 token 失效码，但 check_body=False 时 _raise_for_status 只做 HTTP 校验
+        # 所以 token 失效必须以 HTTP 错误形式出现（如 401 + JSON body）
+        err_resp = _make_resp(401, {"code": 99991663, "msg": "expired"}, reason="Unauthorized")
+        ok_resp = _make_resp(200, None, reason="OK")  # 二进制成功，json 抛 ValueError
+        ok_resp.iter_content.return_value = iter([b"\x89PNG"])
+
+        with patch("fastfeishu.core.request.requests.get", side_effect=[err_resp, ok_resp]) as mock_get:
+            resp = req._do_request(
+                "GET", "https://x",
+                headers={"Authorization": "Bearer old_tat"},
+                stream=True,
+                check_body=False,
+            )
+        assert resp is ok_resp
+        assert mock_get.call_count == 2
+        # 重试的 headers 保留了调用方的自定义结构，仅 Authorization 被刷新
+        retry_headers = mock_get.call_args_list[1].kwargs["headers"]
+        assert retry_headers["Authorization"] == "Bearer new_tat"
+
+    def test_ensure_fresh_token_dedups_concurrent_expiry(self):
+        """并发去重：同一代际的多次失效刷新只发生一次，后续复用新 token。
+
+        直接测 _ensure_fresh_token：两个"同时发出"的请求都用 used_epoch=0，
+        第一个刷新（epoch 0->1），第二个进锁时 epoch 已=1 跳过刷新。
+        """
+        req = self._make_request(tat="T0")
+        req.get_tenant_token.return_value = "T1"
+
+        # 第一次：epoch(0) == used_epoch(0) -> 刷新
+        req._ensure_fresh_token(0)
+        assert req.tat == "T1"
+        assert req._tat_epoch == 1
+        assert req.get_tenant_token.call_count == 1
+
+        # 第二个并发请求：used_epoch 仍是 0，但 epoch 已=1 -> 跳过刷新复用 T1
+        req.get_tenant_token.reset_mock()
+        req._ensure_fresh_token(0)
+        assert req.get_tenant_token.call_count == 0, "代际已变，应跳过刷新"
+        assert req.tat == "T1"  # 复用第一次刷新的结果
+
+    def test_concurrent_real_threads_refresh_once(self):
+        """真多线程：N 个线程同时命中 token 失效，get_tenant_token 只被调用一次。"""
+        import threading
+        req = self._make_request(tat="T0")
+
+        refresh_count = {"n": 0}
+        counter_lock = threading.Lock()
+
+        # 真实的 get_tenant_token：换新 token 并计数
+        def fake_get_token():
+            with counter_lock:
+                refresh_count["n"] += 1
+            req.tat = f"T_new_{refresh_count['n']}"
+            return req.tat
+        req.get_tenant_token = Mock(side_effect=fake_get_token)
+
+        barrier = threading.Barrier(5)
+        # 所有带 T0 的请求都失效，带 T_new 的成功
+        def fake_get(url, headers=None, **kw):
+            barrier.wait(timeout=5)
+            auth = headers["Authorization"]
+            r = Mock()
+            r.url = url; r.text = ""; r.headers = {"content-type": "application/json"}
+            if "T0" in auth:
+                r.status_code = 200
+                r.json.return_value = {"code": 99991663, "msg": "expired"}
+                r.raise_for_status.return_value = None
+            else:
+                r.status_code = 200
+                r.json.return_value = {"code": 0, "msg": "ok"}
+                r.raise_for_status.return_value = None
+            return r
+
+        errors = []
+        with patch("fastfeishu.core.request.requests.get", side_effect=fake_get):
+            def worker():
+                try:
+                    req._do_request("GET", "https://x")
+                except Exception as e:
+                    errors.append(e)
+            threads = [threading.Thread(target=worker) for _ in range(5)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+
+        assert errors == [], f"不应有异常: {errors}"
+        assert refresh_count["n"] == 1, (
+            f"5 线程并发失效应只刷新 1 次，实际 {refresh_count['n']}"
+        )

@@ -1336,6 +1336,9 @@ if __name__ == '__main__':
 - `set_style(sheet_range, style)` - 设置单个范围的样式
 - `set_styles(data)` - 批量设置多个范围的样式
 
+**鉴权**（通过 `s.raw_request` 访问）:
+- `refresh_tenant_token()` - 手动重新获取 tenant_access_token（日常无需调用，token 失效会自动刷新重试）
+
 **属性**:
 - `header` - 表头列表
 - `link` - 当前链接
@@ -1356,10 +1359,60 @@ try:
 except FeiShuColumnNotExist as e:
     print(f"列不存在: {e}")
 except FeiShuRequestException as e:
-    print(f"请求异常: {e}")
+    print(f"请求异常: {e}")  # e.code 可拿到业务错误码（HTTP 错误但响应体非 JSON 时为 None）
 except FeiShuException as e:
     print(f"飞书异常: {e}")
 ```
+
+### 7.1 tenant_access_token 自动刷新
+
+`tenant_access_token` 有效期约 2 小时，过期后调用接口会返回 token 失效错误码。
+fastfeishu 在 request 层统一处理：当响应命中以下飞书通用错误码时，**自动重新获取
+token 并重试一次**（只重试一次，避免无限循环），对调用方完全透明：
+
+| 错误码 | 含义 |
+|--------|------|
+| `99991663` | tenant_access_token 过期/无效（主码） |
+| `99991665` | invalid tenant code |
+| `4001` | Invalid token, please refresh |
+| `20013` | tenant access token invalid |
+| `20005` | invalid access_token |
+
+如果你希望主动控制（例如长时间运行的任务前预刷新），可调用手动刷新方法：
+
+```python
+from fastfeishu.core import FeiShuSheet
+
+s = FeiShuSheet('飞书链接')
+s.raw_request.refresh_tenant_token()   # 手动重新获取 tenant_access_token
+```
+
+> 自动重试通过统一 HTTP 入口 `_do_request` 实现，所有读写/下载方法均受益；
+> 二进制流式下载（图片、导出文件）在 token 失效时同样会刷新重试，且不会消耗响应流。
+>
+> **线程安全**：多线程共享同一个 `FeiShuSheet` 实例时，若并发命中 token 失效，
+> 内部用锁 + 代际计数器去重，只刷新一次，其余线程直接复用新 token，避免重复刷新。
+
+### 7.2 自定义触发刷新的错误码
+
+触发自动刷新的错误码集合定义在 `fastfeishu.core.request.TENANT_TOKEN_EXPIRED_CODES`（默认为上表 5 个码）。
+**无需改源码**，运行时重新赋值即可对后续所有请求立即生效（`_do_request` 每次都查模块全局对象）：
+
+```python
+import fastfeishu.core.request as ff_req
+
+# 增加一个码（frozenset | 返回新集合）
+ff_req.TENANT_TOKEN_EXPIRED_CODES = ff_req.TENANT_TOKEN_EXPIRED_CODES | {91402}
+
+# 移除一个码
+ff_req.TENANT_TOKEN_EXPIRED_CODES = ff_req.TENANT_TOKEN_EXPIRED_CODES - {4001}
+
+# 完全自定义
+ff_req.TENANT_TOKEN_EXPIRED_CODES = frozenset({99991663})
+```
+
+> 这段代码只需在创建 `FeiShuSheet` 之前执行一次即可，整个进程内的请求都会用新集合。
+> `frozenset` 是不可变类型，必须整体重新赋值，不能 `.add()`。
 
 ---
 
