@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fastfeishu"
-version = "0.0.1a2"
+version = "0.1.0"
 description = "飞书文档快速操作API - 飞书（Lark）Sheets API v3 的高级 Python 封装"
 readme = "README.md"
 requires-python = ">=3.9"
