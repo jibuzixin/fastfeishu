@@ -605,5 +605,5 @@ class FeiShuSheetOperations:
 
             quality -= 10  # 逐步降低质量
 
-        # 最终转 base64
-        return base64_image(data)
+        # 最终转 base64（用压缩后的数据，而非原始 data）
+        return base64_image(compressed_data)
