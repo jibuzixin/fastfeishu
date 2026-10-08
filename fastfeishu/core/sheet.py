@@ -1,5 +1,3 @@
-import pandas as pd
-
 from fastfeishu.core.operations import FeiShuSheetOperations
 from typing import Union, Any, Optional, List, Generator, Dict, Literal, Type, Tuple, Callable
 from fastfeishu.helpers import num_to_excel_col, match_row_num_by_range, match_col_letter_by_range, excel_col_to_num, cell_is_blank

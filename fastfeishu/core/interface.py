@@ -1,11 +1,14 @@
+from __future__ import annotations
+
 from typing import (
     Protocol,
     Generator,
     Union,
     Optional,
     List, Any, Dict,
-    Literal,)
-import pandas as pd
+    Literal,
+    Type,
+    Callable,)
 import abc
 
 
@@ -78,9 +81,10 @@ class FeiShuInterface(abc.ABC):
             start_row: int = 2,
             end_row: Optional[int] = None,
             batch_size: int = 500,
-            include_header: bool = False,
-            use_pandas: bool = True,
-    ) -> Generator[Union[dict[str, Any], pd.Series], None, None]: ...
+            return_type: Type[Union[List[Any], Dict[str, Any]]] = dict,
+            columns: Optional[List[str]] = None,
+            read_method: Optional[Callable[..., List[List[Any]]]] = None,
+    ) -> Generator[Union[tuple[int, Dict[str, Any]], tuple[int, List[Any]]], None, None]: ...
 
     @abc.abstractmethod
     def insert_column_to_right(
@@ -112,4 +116,4 @@ class IterableSheetProtocol(Protocol):
         self,
         start_row: int = 2,
         end_row: Optional[int] = None,
-    ) -> Generator[Union[dict[str, Any], pd.Series], None, None]: ...
+    ) -> Generator[tuple[int, Dict[str, Any]], None, None]: ...

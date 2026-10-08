@@ -7,7 +7,7 @@
 
 import re
 import base64
-import pandas as pd
+import math
 from typing import Tuple, Union, Any
 import requests
 from urllib.parse import unquote
@@ -29,11 +29,16 @@ def extract_filename_from_response(response: requests.Response) -> str | None:
     return None
 
 def cell_is_blank(cell_data: Any) -> bool:
-    """判断单元格是否为空、None、nan"""
-    if pd.isna(cell_data) or cell_data == '' or cell_data is None:
+    """判断单元格是否为空、None、nan
+
+    不依赖 pandas：直接用 stdlib 判断。float 的 NaN（含 numpy 浮点 NaN，
+    ``isinstance(np.float64, float)`` 为真）走 ``math.isnan`` 分支。
+    """
+    if cell_data is None or cell_data == '':
         return True
-    else:
-        return False
+    if isinstance(cell_data, float) and math.isnan(cell_data):
+        return True
+    return False
 
 
 def match_row_num_by_range(s: str) -> Tuple[str, str]:
