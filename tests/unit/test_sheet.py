@@ -1160,3 +1160,129 @@ class TestCheckColumns:
 
         # 验证空数组时返回 True（all([]) 为 True）
         assert result is True
+
+
+def _mock_resp(json_data):
+    """构造一个 mock 的 requests.Response（json + raise_for_status 空转）。"""
+    r = Mock()
+    r.json.return_value = json_data
+    r.raise_for_status = Mock()
+    return r
+
+
+def _meta_response(row_count, col_count, sheet_id="TestSheet456"):
+    """构造 sheet metadata 响应。"""
+    return {
+        "code": 0, "msg": "success",
+        "data": {
+            "spreadsheetToken": "TestToken123",
+            "properties": {"title": "测试", "sheetCount": 1, "revision": 10},
+            "sheets": [{
+                "sheetId": sheet_id, "title": "Sheet1", "index": 0,
+                "rowCount": row_count, "columnCount": col_count,
+                "frozenRowCount": 0, "frozenColCount": 0, "hidden": False,
+            }],
+        },
+    }
+
+
+def _header_response(header):
+    """构造 read 表头的响应。"""
+    return {"code": 0, "msg": "success",
+            "data": {"valueRange": {"values": [header]}}}
+
+
+@pytest.mark.unit
+class TestIterrowsColumnsChineseMixed:
+    """iterrows(columns=) 对中英混杂列名的解析回归测试。
+
+    Bug：原判断 ``col.isalpha() and col.isupper()`` 中，中文字符 isalpha() 为 True、
+    且 isupper() 忽略无大小写的中文，导致 "测试URL" 这类中英混杂列名被误判为列字母，
+    excel_col_to_num 算出天文列号、读到空范围。修复：要求列字母必须 isascii()。
+    """
+
+    def _make_sheet_with_header(self, mock_get, mock_post, header, row_count=2):
+        """构造一个表头已就绪的 FeiShuSheet，并返回它。"""
+        from fastfeishu.core.sheet import FeiShuSheet
+        mock_token = _mock_resp({
+            "code": 0, "msg": "success",
+            "tenant_access_token": "mock_tat", "expire": 7200,
+        })
+        mock_post.return_value = mock_token
+
+        col_count = len(header)
+        meta = _meta_response(row_count, col_count)
+        # iterrows: get_sheet_info() 一次 + get_header()->get_sheet_info() 一次 + read 表头一次
+        mock_get.side_effect = [
+            _mock_resp(meta), _mock_resp(meta), _mock_resp(_header_response(header)),
+        ]
+        return FeiShuSheet(
+            "https://li.feishu.cn/sheets/TestToken123?sheet=TestSheet456",
+            readonly=True,
+        )
+
+    @patch('fastfeishu.core.request.requests.post')
+    @patch('fastfeishu.core.request.requests.get')
+    def test_chinese_mixed_uppercase_name_treated_as_name(self, mock_get, mock_post):
+        """中英混杂列名（如 '测试URL'）应按列名查找，而非误判为列字母。"""
+        header = ["序号", "测试URL", "备注"]  # 测试URL 在第 2 列 -> 字母 B
+        sheet = self._make_sheet_with_header(mock_get, mock_post, header)
+
+        captured = {}
+
+        def fake_read_batch(ranges, value_render_option="ToString",
+                            date_time_render_option="FormattedString"):
+            captured["ranges"] = list(ranges)
+            return {"valueRanges": [{"range": r, "values": [["d1"]]} for r in ranges]}
+
+        with patch.object(sheet, "read_batch", side_effect=fake_read_batch):
+            rows = list(sheet.iterrows(columns=["测试URL"], start_row=2))
+
+        # 关键断言：列字母应为 B（第 2 列），而非修复前误算的天文列字母
+        assert captured["ranges"] == ["B2:B2"], (
+            f"中英混杂列名应解析为 B 列，实际 ranges={captured['ranges']}"
+        )
+        assert rows == [(2, {"测试URL": "d1"})]
+
+    @patch('fastfeishu.core.request.requests.post')
+    @patch('fastfeishu.core.request.requests.get')
+    def test_pure_chinese_name_treated_as_name(self, mock_get, mock_post):
+        """纯中文列名（如 '备注'）应按列名查找。"""
+        header = ["序号", "测试URL", "备注"]  # 备注在第 3 列 -> 字母 C
+        sheet = self._make_sheet_with_header(mock_get, mock_post, header)
+
+        captured = {}
+
+        def fake_read_batch(ranges, value_render_option="ToString",
+                            date_time_render_option="FormattedString"):
+            captured["ranges"] = list(ranges)
+            return {"valueRanges": [{"range": r, "values": [["d"]]} for r in ranges]}
+
+        with patch.object(sheet, "read_batch", side_effect=fake_read_batch):
+            list(sheet.iterrows(columns=["备注"], start_row=2))
+
+        assert captured["ranges"] == ["C2:C2"], (
+            f"纯中文列名应解析为 C 列，实际 ranges={captured['ranges']}"
+        )
+
+    @patch('fastfeishu.core.request.requests.post')
+    @patch('fastfeishu.core.request.requests.get')
+    def test_pure_ascii_uppercase_letter_still_treated_as_letter(self, mock_get, mock_post):
+        """回归：纯 ASCII 大写字母（如 'A'/'C'）仍应作为列字母解析，不被 isascii() fix 误伤。"""
+        header = ["序号", "测试URL", "备注"]  # A=序号, C=备注
+        sheet = self._make_sheet_with_header(mock_get, mock_post, header)
+
+        captured = {}
+
+        def fake_read_batch(ranges, value_render_option="ToString",
+                            date_time_render_option="FormattedString"):
+            captured["ranges"] = list(ranges)
+            return {"valueRanges": [{"range": r, "values": [["d"]]} for r in ranges]}
+
+        # A、C 是离散列字母 -> ranges 应为 ["A2:A2", "C2:C2"]
+        with patch.object(sheet, "read_batch", side_effect=fake_read_batch):
+            list(sheet.iterrows(columns=["A", "C"], start_row=2))
+
+        assert captured["ranges"] == ["A2:A2", "C2:C2"], (
+            f"纯 ASCII 列字母应正常解析，实际 ranges={captured['ranges']}"
+        )

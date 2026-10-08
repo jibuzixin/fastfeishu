@@ -866,7 +866,11 @@ class FeiShuSheet(FeiShuSheetOperations, FeiShuInterface):
             selected_header = []
 
             for col in columns:
-                if isinstance(col, str) and col.isalpha() and col.isupper():
+                # 列字母必须是纯 ASCII 大写字母（如 'A', 'B', 'AA'）。
+                # 注意：不能只用 isalpha()+isupper()——中文字符 isalpha() 也为 True，
+                # 且 isupper() 忽略无大小写的中文，会导致 "测试URL" 这类中英混杂列名
+                # 被误判为列字母，进而 excel_col_to_num 算出天文列号、读到空范围。
+                if isinstance(col, str) and col.isascii() and col.isalpha() and col.isupper():
                     # 列字母（如 'A', 'B', 'AA'）
                     col_idx = excel_col_to_num(col)
                     col_indices.append(col_idx)
