@@ -23,3 +23,7 @@ htmlcov/
 tmp*/
 dist/
 build/
+site/
+
+# 文档站点构建产物（由 tools/build_docs_site.py 生成，CI 部署）
+site/
