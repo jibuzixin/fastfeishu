@@ -45,18 +45,9 @@ NAV = [
         ("批量处理工具", "docs/batch-utils.md"),
         ("Sheet 管理", "docs/sheet-management.md"),
         ("API 参考与异常", "docs/api-reference.md"),
-        ("类型系统快速入门", "docs/QUICK_START.md"),
         ("文档导出", "docs/EXPORT_GUIDE.md"),
     ]),
-    ("进阶专题", [
-        ("建造者模式指南", "docs/BUILDER_PATTERN_GUIDE.md"),
-        ("建造者模式升级说明", "docs/BUILDER_PATTERN_UPGRADE.md"),
-        ("类型系统 V2", "docs/TYPE_SYSTEM_V2.md"),
-        ("导出实现说明", "docs/EXPORT_IMPLEMENTATION.md"),
-        ("导出优化记录", "docs/EXPORT_OPTIMIZATION.md"),
-    ]),
     ("参与开发", [
-        ("开发者指南", "docs/development.md"),
         ("贡献指南", "docs/CONTRIBUTING.md"),
         ("测试指南", "docs/TESTING.md"),
         ("集成测试指南", "docs/INTEGRATION_TESTS.md"),

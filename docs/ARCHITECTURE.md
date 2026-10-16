@@ -72,4 +72,4 @@ fastfeishu/utils/               高级工具（FeiShuUtil / common / export_util
 - [基础操作](basic-operations.md)
 - [单元格类型](cell-types.md)
 - [API 参考与异常处理](api-reference.md)
-- [开发者指南](development.md) / [开发者贡献指南](CONTRIBUTING.md)
+- [开发者贡献指南](CONTRIBUTING.md)

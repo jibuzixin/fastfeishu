@@ -25,9 +25,9 @@ README 只做项目门面（logo、特性表、30 秒快速开始、文档索引
 | `docs/sheet-management.md` | Sheet 创建 / 复制 / 属性 |
 | `docs/api-reference.md` | 全量方法速查 + 异常与 token 刷新 |
 | `docs/ARCHITECTURE.md` | 面向人的架构说明（与本文件互为补充） |
-| `docs/development.md`、`docs/CONTRIBUTING.md` | 开发流程与提交规范 |
+| `docs/CONTRIBUTING.md` | 开发流程、提交规范、CI/Pages 流水线 |
 | `docs/TESTING.md`、`docs/INTEGRATION_TESTS.md` | 测试编写与集成测试配置 |
-| `docs/EXPORT_*.md`、`docs/TYPE_SYSTEM_V2.md` 等 | 专题记录 |
+| `docs/EXPORT_GUIDE.md` | 文档导出用法 |
 
 **规则**：新增用户可见能力时，更新对应的 `docs/*.md`，README 只在需要新增文档条目时改动。
 

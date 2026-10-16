@@ -64,6 +64,14 @@ git push origin dev
 - **测试环境**: 干净的 Linux 环境
 - **失败处理**: PR 无法合并，需要修复
 
+### 文档站部署（GitHub Pages）
+
+- **工作流**: `.github/workflows/pages.yml`
+- **触发时机**: 推送到 `main` 且 `README.md` / `docs/**` / `assets/**` 有改动
+- **构建命令**: `python tools/build_docs_site.py` → 输出 `site/`
+- **首次配置**: Settings → Pages → Source 选择 *GitHub Actions*
+- **本地预览**: `python tools/build_docs_site.py && python -m http.server -d site 8000`
+
 ## 手动运行测试
 
 ```bash
@@ -192,24 +200,24 @@ ls -la .git/hooks/
 
 ## 测试覆盖率
 
-当前测试覆盖率：**48%**（66个单元测试）
+覆盖率数据与各模块明细统一维护在 **[测试指南](TESTING.md)**，请勿在其他文档重复抄写，避免过期。
 
+本地查看：
+
+```bash
+pytest tests/unit -v -m unit --cov=fastfeishu --cov-report=term-missing
+# HTML 报告：打开 htmlcov/index.html
 ```
-Name                                 Stmts   Miss  Cover
---------------------------------------------------------
-fastfeishu/__init__.py                  1      0   100%
-fastfeishu/core/sheet.py              250     95    62%
-fastfeishu/core/operations.py         180     85    53%
-fastfeishu/helpers.py                  45      8    82%
-...
-```
+
+---
 
 ## 获取帮助
 
-- 查看项目文档: `README.md`
-- 查看代码规范: `CLAUDE.md`
+- 查看项目文档: [在线文档站](https://jibuzixin.github.io/fastfeishu/)
+- 查看架构设计: [docs/ARCHITECTURE.md](ARCHITECTURE.md)
+- 查看测试指南: [docs/TESTING.md](TESTING.md)
 - 提交 Issue: GitHub Issues
-- 联系维护者: [维护者邮箱]
+- 联系维护者: this.jibuzixin@gmail.com（见 pyproject.toml）
 
 ---
 

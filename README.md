@@ -73,18 +73,16 @@ FS_APP_SECRET='xxxxxxxx'
 | [批量处理工具](docs/batch-utils.md) | `FeiShuUtil`、批量下载图片、随机抽样 |
 | [Sheet 管理](docs/sheet-management.md) | 创建 / 复制 Sheet、属性与状态查询 |
 | [API 参考与异常处理](docs/api-reference.md) | 全量方法速查、错误码与自定义刷新 |
-| [类型系统快速入门](docs/QUICK_START.md) | Builder 模式与样式预设实战 |
+| [文档导出](docs/EXPORT_GUIDE.md) | 异步导出任务与文件下载 |
 
 ### 开发
 
 | 文档 | 内容 |
 | --- | --- |
 | [项目架构](docs/ARCHITECTURE.md) | 四层分层、设计模式、关键实现细节 |
-| [开发者指南](docs/development.md) | 提交规范、Hook、CI/CD 概览 |
-| [开发者贡献指南](docs/CONTRIBUTING.md) | 一键装环境、工作流、代码规范 |
-| [测试指南](docs/TESTING.md) | 单元测试编写、Fixtures、覆盖率目标 |
+| [开发者贡献指南](docs/CONTRIBUTING.md) | 一键装环境、工作流、提交规范、CI/Pages 流水线 |
+| [测试指南](docs/TESTING.md) | 单元测试编写、Fixtures、覆盖率明细 |
 | [集成测试指南](docs/INTEGRATION_TESTS.md) | 测试表格配置、跳过与清理策略 |
-| [文档导出](docs/EXPORT_GUIDE.md) | 异步导出任务与文件下载 |
 
 ## 🛠️ 开发
 

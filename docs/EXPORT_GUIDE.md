@@ -140,9 +140,17 @@ else:
     print(f"任务失败: {result.job_error_msg}")
 ```
 
-### 方式三：使用底层 API（最大灵活性）
+### 方式三：使用底层 API（一般用不到）
 
-如果需要完全控制请求过程，可以直接使用 `FeiShuRequest` 的底层方法。
+前两种方式都由 `utils/export_util.py` 封装了认证、重试与轮询。**除非你需要自己控制完整请求过程**，否则不要直接用这一层：它要求你自备一个可用的 `FeiShuRequest`，并且返回的是原始 `Response`，没有错误码转换和重试。
+
+```python
+from fastfeishu.core.request import FeiShuRequest
+from fastfeishu.models.export_task import ExportTaskResult
+import time
+
+# 初始化 request（需要一个有效的飞书链接用于认证）
+request = FeiShuRequest("https://your-feishu-link")
 
 ```python
 from fastfeishu.core.request import FeiShuRequest
@@ -322,7 +330,7 @@ for doc in documents:
 | doc_type | str/ExportDocType | 是 | 文档类型 (doc/sheet/bitable/docx) |
 | file_extension | str/ExportFileExtension | 是 | 导出格式 (docx/pdf/xlsx/csv) |
 | save_path | str | 否 | 保存路径，不传则返回字节流 |
-| sub_id | str | 否 | 子表 ID (CSV 导出时需要) |
+| sub_id | str | 否 | 子表 ID。导出 sheet 的 CSV、导出 bitable 时分别传 sheet_id / table_id，其他场景留空 |
 | max_retry | int | 否 | 最大重试次数，默认 60 |
 | retry_interval | float | 否 | 重试间隔秒数，默认 2.0 |
 
@@ -330,6 +338,21 @@ for doc in documents:
 
 - 如果指定了 `save_path`：返回保存的文件路径（str）
 - 如果未指定 `save_path`：返回文件字节流（bytes）
+
+## 已有 FeiShuSheet 实例时复用认证
+
+`FeiShuExportUtil` 接受一个已有的 `FeiShuRequest`，可以直接复用 `FeiShuSheet.raw_request`，避免重复获取 token：
+
+```python
+from fastfeishu.core import FeiShuSheet
+from fastfeishu.utils.export_util import FeiShuExportUtil
+
+s = FeiShuSheet("https://your-feishu-link")
+exporter = FeiShuExportUtil(s.raw_request)
+content = exporter.download_export_file_simple(file_token)
+```
+
+> `FeiShuExportUtil()` 不传参数时会自行建立认证；若传入非法对象，构造阶段会抛 `FeiShuExportException`。
 
 ## 更多信息
 
