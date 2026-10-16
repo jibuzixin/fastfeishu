@@ -673,7 +673,7 @@ pytest tests/integration/test_write_operations.py::TestWriteColumn::test_write_t
 
 - [测试指南](./TESTING.md) - 单元测试的编写规范
 - [开发者贡献指南](./CONTRIBUTING.md) - 开发工作流和代码规范
-- [项目架构指南](./CLAUDE.md) - 架构设计和开发模式
+- [项目架构指南](ARCHITECTURE.md) - 架构设计和开发模式
 
 ---
 
