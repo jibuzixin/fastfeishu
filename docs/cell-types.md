@@ -219,13 +219,16 @@ if __name__ == '__main__':
     data = ["https://example.com", "test@example.com", "=A1+B1", 123]
     cells = CellTypeConverter.from_list(data)
 
-    # 二维表格 → JSON（注意：元素不能混用裸数字，数字请显式包成 Number）
+    # 二维表格 → JSON（数字、None 等非文本值会原样透传）
     table = [
         ["https://example.com", "test@example.com"],
-        ["=A1+B1", Number(123)]
+        ["=A1+B1", 123]
     ]
-    cells_table = CellTypeConverter.from_list_to_json(table)
+    cells_table = CellTypeConverter.from_table_to_json(table)
     s.write('A1:D2', cells_table)
+
+    # 同上，但返回单元格类型对象而非 JSON
+    objects = CellTypeConverter.from_table(table)
 
     # 字典转换（单个 dict，不是 dict 列表）
     row = CellTypeConverter.from_dict({
@@ -242,17 +245,12 @@ if __name__ == '__main__':
 | `auto_convert(item, validate_email=True)` | 识别单个值类型 | `FeiShuCellType` 或原值 | ✅ |
 | `auto_convert_to_json(item)` | 同上，直接转 JSON | `dict` | ✅ |
 | `from_list(data)` | 一维列表批量转换 | `List[FeiShuCellType]` | ✅ |
-| `from_list_to_json(data)` | 一维/二维列表转 JSON | `List[dict]` | ⚠️ 见下方注意 |
-| `from_dict(data, validate_email=True)` | **单个字典**转换 | `dict` | ✅ |
-| `from_dict_to_json(data)` | 同上，直接转 JSON | `dict` | ✅ |
-| `from_table(table_data, validate_email=True)` | 二维列表转单元格类型 | `List[List[FeiShuCellType]]` | ❌ 见下方注意 |
-| `from_table_to_json(table_data)` | 二维列表直接转 JSON | `List[List[dict]]` | ✅ |
+| `from_list_to_json(data)` | 一维列表转 JSON | `List` |
+| `from_dict(data, validate_email=True)` | **单个字典**转换 | `dict` |
+| `from_dict_to_json(data)` | 同上，直接转 JSON | `dict` |
+| `from_table(table_data, validate_email=True)` | 二维列表转单元格类型 | `List[List[FeiShuCellType]]` |
+| `from_table_to_json(table_data)` | 二维列表直接转 JSON | `List[List]` |
 
-> ⚠️ **已知问题（当前版本）**
->
-> 1. `from_list_to_json` 遇到裸数字会抛 `AttributeError: 'int' object has no attribute 'to_json'`，因为 `auto_convert(123)` 返回的就是 `int`。纯数字列请显式写 `Number(123)`。
-> 2. `from_table` 内部调用了不存在的 `from_list_to_type`，任何输入都会抛 `AttributeError`；暂时改用 `from_table_to_json`。
->
-> 这两处是库的实现缺陷而非用法问题，已记录在项目待办中。
+> **注意**：数字、布尔、`None` 等非文本值不会被包装成单元格类型，而是原样透传，因此转 JSON 时仍保持 `123` 而非 `{'type': 'number', ...}`。这是预期行为。
 
 ---
