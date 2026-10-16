@@ -776,22 +776,22 @@ class CellTypeConverter:
     2. 转换为 JSON 格式（直接用于API调用）
 
     使用示例：
-    # 方式1: 直接获取 JSON（适合直接调用 API）
-    json_data = CellConverter.auto_convert("test@example.com")
-    # 返回: "test@example.com"
+    # 方式1: 获取 FeiShuCellType 对象（可进一步操作）
+    cell = CellTypeConverter.auto_convert("test@example.com")
+    # 返回: Email 对象
 
-    # 方式2: 获取 FeiShuCellType 对象（更灵活）
-    email_obj = CellConverter.auto_convert_to_type("test@example.com")
-    # 返回: Email 对象，可以进一步操作
+    # 方式2: 直接获取 JSON（适合直接调用 API）
+    json_data = CellTypeConverter.auto_convert_to_json("test@example.com")
+    # 返回: {"type": "email", ...}
 
     # 批量转换为对象
-    data = ["text", 123, "https://example.com"]
-    objects = CellConverter.from_list_to_type(data)
-    # 返回: [PlainText, Number, NotTextLink] 对象列表
+    objects = CellTypeConverter.from_list(["text", 123, "https://example.com"])
 
     # 批量转换为 JSON
-    json_list = CellConverter.from_list(data)
-    # 返回: ["text", 123, "https://example.com"] JSON 列表
+    json_list = CellTypeConverter.from_list_to_json(["text", 123, "https://example.com"])
+
+    注意: 数字、布尔、None 等非文本值会原样返回（不会包装成单元格类型），
+    它们本身就是可 JSON 序列化的值。
     """
 
     @staticmethod
@@ -807,12 +807,12 @@ class CellTypeConverter:
 
         Example:
             # 转换为对象，可以进一步操作
-            cell = CellTypeConverter.auto_convert_to_type("test@example.com")
+            cell = CellTypeConverter.auto_convert("test@example.com")
             # cell 是 Email 对象
 
-            # 转换后再修改
-            number = CellTypeConverter.auto_convert_to_type(100)
-            json_data = number.to_json()  # 手动转 JSON
+            # 数字不会被包装成单元格类型，会原样返回
+            number = CellTypeConverter.auto_convert(100)
+            # number 是 100
         """
         if item is None:
             return None
@@ -883,10 +883,14 @@ class CellTypeConverter:
 
         Example:
             # 直接转换为 JSON
-            json_data = CellTypeConverter.auto_convert("test@example.com")
+            json_data = CellTypeConverter.auto_convert_to_json("test@example.com")
         """
         cell_type = CellTypeConverter.auto_convert(item, validate_email)
-        return cell_type.to_json()
+        # auto_convert 对数字/布尔/None 等非文本值会原样返回，它们本身就是可 JSON 序列化的值，
+        # 直接透传即可，强行调用 to_json() 会抛 AttributeError
+        if isinstance(cell_type, FeiShuCellType):
+            return cell_type.to_json()
+        return cell_type
 
     @staticmethod
     def from_list(data: List[any], validate_email: bool = True) -> List[FeiShuCellType]:
@@ -926,7 +930,7 @@ class CellTypeConverter:
             FeiShuCellType 对象二维列表
         """
         return [
-            CellTypeConverter.from_list_to_type(row, validate_email)
+            CellTypeConverter.from_list(row, validate_email)
             for row in table_data
         ]
 
@@ -942,7 +946,7 @@ class CellTypeConverter:
             JSON 数据二维列表
         """
         return [
-            CellTypeConverter.from_list(row, validate_email)
+            CellTypeConverter.from_list_to_json(row, validate_email)
             for row in table_data
         ]
 

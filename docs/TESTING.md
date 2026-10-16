@@ -26,19 +26,26 @@ tests/
 
 ## 📊 当前测试覆盖率
 
-| 模块 | 覆盖率 | 测试数量 | 状态 |
-|------|--------|---------|------|
-| **整体** | **57%** | **123个** | ✅ 良好 |
-| fastfeishu/helpers.py | 95% | 13个 | 🌟 优秀 |
-| fastfeishu/utils/feishu_util.py | 100% | 9个 | 🌟 完美 |
-| fastfeishu/models/cell_style.py | 93% | 15个 | ✅ 优秀 |
-| fastfeishu/models/feishu_cfg.py | 91% | 6个 | ✅ 优秀 |
-| fastfeishu/core/request.py | 52% | 10个 | 📈 中等 |
-| fastfeishu/utils/common.py | 48% | 36个 | 📈 改善 |
-| fastfeishu/core/operations.py | 44% | 8个 | 📊 待提升 |
-| fastfeishu/core/sheet.py | 38% | 14个 | 📊 待提升 |
+数据来自最近一次 `pytest tests/unit`（196 通过 / 1 跳过），覆盖率会随代码变动，请以实际运行为准。
 
----
+| 模块 | 覆盖率 | 状态 |
+|------|--------|------|
+| **整体** | **61%** | ✅ 良好 |
+| fastfeishu/models/cell_style.py | 93% | 🌟 优秀 |
+| fastfeishu/models/feishu_cfg.py | 92% | 🌟 优秀 |
+| fastfeishu/models/sheet_properties.py | 84% | ✅ 优秀 |
+| fastfeishu/helpers.py | 81% | ✅ 优秀 |
+| fastfeishu/configs/settings.py | 78% | ✅ 良好 |
+| fastfeishu/core/operations.py | 74% | ✅ 良好 |
+| fastfeishu/models/feishu_var.py | 74% | ✅ 良好 |
+| fastfeishu/core/request.py | 69% | ✅ 良好 |
+| fastfeishu/core/sheet.py | 66% | ✅ 良好 |
+| fastfeishu/models/export_task.py | 66% | ✅ 良好 |
+| fastfeishu/utils/feishu_util.py | 54% | 📈 待提升 |
+| fastfeishu/models/type.py | 53% | 📈 待提升 |
+| fastfeishu/utils/common.py | 47% | 📈 待提升 |
+| fastfeishu/utils/partition_grid.py | 34% | 📊 待提升 |
+| fastfeishu/utils/export_util.py | 0% | 📊 待补测试 |
 
 ## 🚀 快速开始
 
@@ -407,7 +414,7 @@ jobs:
 
 - **[集成测试指南](./INTEGRATION_TESTS.md)** - 如何编写和运行集成测试
 - **[开发者贡献指南](./CONTRIBUTING.md)** - 开发工作流和代码规范
-- **[项目架构指南](./CLAUDE.md)** - 架构设计和开发模式
+- **[项目架构指南](ARCHITECTURE.md)** - 架构设计和开发模式
 - [Pytest官方文档](https://docs.pytest.org/)
 - [unittest.mock文档](https://docs.python.org/3/library/unittest.mock.html)
 - [pytest-cov文档](https://pytest-cov.readthedocs.io/)

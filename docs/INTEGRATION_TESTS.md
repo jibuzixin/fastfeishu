@@ -276,7 +276,7 @@ pytest tests/integration -v -m "integration and not slow"
 
 import pytest
 import os
-from fastfeishu import FeiShuSheet
+from fastfeishu.core import FeiShuSheet
 
 
 @pytest.fixture
@@ -294,9 +294,11 @@ def clean_sheet(test_sheet_url):
     sheet = FeiShuSheet(test_sheet_url)
 
     # 清空表格（保留表头）
+    # 注意：get_sheet_info() 返回飞书 API 的原始结构，行数在 grid_properties 里
     info = sheet.get_sheet_info()
-    if info["rowCount"] > 1:
-        sheet.delete_series(2, info["rowCount"], "ROWS")
+    row_count = info["grid_properties"]["row_count"]
+    if row_count > 1:
+        sheet.delete_series(2, row_count, "ROWS")
 
     yield sheet
 
@@ -372,7 +374,7 @@ class TestAppendToColumn:
 
 import pytest
 import time
-from fastfeishu import FeiShuSheet
+from fastfeishu.core import FeiShuSheet
 
 
 @pytest.mark.integration
@@ -394,7 +396,7 @@ class TestBatchWrite:
 
         # 验证写入成功
         info = clean_sheet.get_sheet_info()
-        assert info["rowCount"] >= 1001  # 表头 + 1000行
+        assert info["grid_properties"]["row_count"] >= 1001  # 表头 + 1000行
 
         # 性能要求：1000行应该在30秒内完成
         assert elapsed < 30, f"写入1000行耗时 {elapsed:.2f}秒，超过30秒"
@@ -427,7 +429,7 @@ class TestBatchWrite:
 """
 
 import pytest
-from fastfeishu import FeiShuSheet
+from fastfeishu.core import FeiShuSheet
 
 
 @pytest.mark.integration
@@ -480,7 +482,7 @@ class TestIterrows:
 """
 
 import pytest
-from fastfeishu import FeiShuSheet
+from fastfeishu.core import FeiShuSheet
 from fastfeishu.utils.feishu_util import FeiShuUtil
 
 
@@ -524,7 +526,7 @@ class TestReplacePlaceholder:
 """
 
 import pytest
-from fastfeishu import FeiShuSheet
+from fastfeishu.core import FeiShuSheet
 
 
 @pytest.mark.integration
@@ -673,7 +675,7 @@ pytest tests/integration/test_write_operations.py::TestWriteColumn::test_write_t
 
 - [测试指南](./TESTING.md) - 单元测试的编写规范
 - [开发者贡献指南](./CONTRIBUTING.md) - 开发工作流和代码规范
-- [项目架构指南](./CLAUDE.md) - 架构设计和开发模式
+- [项目架构指南](ARCHITECTURE.md) - 架构设计和开发模式
 
 ---
 

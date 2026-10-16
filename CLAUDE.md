@@ -6,15 +6,49 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 fastfeishu is a Python package for interacting with Feishu (Lark) Sheets API v3. It provides a high-level interface for reading, writing, and managing spreadsheets with support for batch operations, image handling, and streaming reads.
 
-**Tech Stack:** Python 3.11+, pydantic, pandas, aiohttp, requests, Pillow
+**Tech Stack:** Python, requests, PyYAML, yarl, pydantic-settings, python-dotenv
+（`pandas` 已移除；`Pillow` → `[image]`、`aiohttp` → `[download]` 均为可选依赖）
 
 **Package Name:** fastfeishu
-**Current Version:** 0.1.0 (see `fastfeishu/__init__.py`)
+**Current Version:** 0.1.0 (see `fastfeishu/__init__.py` and `pyproject.toml`)
+
+## Documentation Layout
+
+README 只做项目门面（logo、特性表、30 秒快速开始、文档索引），具体用法已拆分：
+
+| 文档 | 内容 |
+| --- | --- |
+| `docs/getting-started.md` | 安装、可选依赖、环境变量、目录结构 |
+| `docs/basic-operations.md` | 读取 / 写入 / 删除 / 行列追加 / 样式 |
+| `docs/cell-types.md` | 单元格类型与富文本 |
+| `docs/batch-utils.md` | `FeiShuUtil`、批量下载、抽样 |
+| `docs/sheet-management.md` | Sheet 创建 / 复制 / 属性 |
+| `docs/api-reference.md` | 全量方法速查 + 异常与 token 刷新 |
+| `docs/ARCHITECTURE.md` | 面向人的架构说明（与本文件互为补充） |
+| `docs/CONTRIBUTING.md` | 开发流程、提交规范、CI/Pages 流水线 |
+| `docs/TESTING.md`、`docs/INTEGRATION_TESTS.md` | 测试编写与集成测试配置 |
+| `docs/EXPORT_GUIDE.md` | 文档导出用法 |
+
+**规则**：新增用户可见能力时，更新对应的 `docs/*.md`，README 只在需要新增文档条目时改动。
+
+### 文档站点（GitHub Pages）
+
+`tools/build_docs_site.py` 把 README 与 `docs/*.md` 编译成纯静态站点（左侧导航 + 右侧正文），输出到 `site/`：
+
+```bash
+python tools/build_docs_site.py          # 默认输出 site/
+python -m http.server -d site 8000       # 本地预览
+```
+
+- 导航结构在脚本顶部的 `NAV` 中维护，新增文档需登记，否则不会出现在站点里
+- 站点目录结构与仓库一致（`site/docs/*.html`），站内链接会自动改写为 `.html`
+- GitHub Pages 发布来源：分支 `main` + 目录 `/site`（或用 GitHub Actions 部署）
+- 依赖：`markdown-it-py` + `Pygments`（仅构建期需要，不进项目依赖）
 
 ## Development Setup
 
 ### Environment
-- Python 3.11+ (3.11 recommended, 3.12 may have dependency conflicts)
+- Python 3.9+（`requires-python = ">=3.9"`），本地开发推荐 3.11
 - Uses standard PyPI by default (can configure internal PyPI if needed)
 
 ### Installation
@@ -341,6 +375,7 @@ result = sample_from_array(labels, label_config={}, max_samples=2)
 - `fastfeishu/helpers.py` - Pure utility functions with zero dependencies (bottom layer)
 
 **Core Layer:**
+- `fastfeishu/core/__init__.py` - 仅导出 `FeiShuInterface` / `FeiShuRequest` / `FeiShuSheet`（`FeiShuSheetOperations` 需从 `fastfeishu.core.operations` 导入）
 - `fastfeishu/core/interface.py` - `FeiShuInterface` abstract base class with Protocol definitions
 - `fastfeishu/core/operations.py` - `FeiShuSheetOperations` with validation, caching, range parsing
 - `fastfeishu/core/request.py` - `FeiShuRequest` for HTTP communication and token management
@@ -355,6 +390,7 @@ result = sample_from_array(labels, label_config={}, max_samples=2)
 - `fastfeishu/models/export_task.py` - Export task models (`ExportTaskRequest`, `ExportTaskResult`, etc.)
 
 **Utilities:**
+- `fastfeishu/utils/export_util.py` - `FeiShuExportUtil` / `export_document`（异步导出任务封装）
 - `fastfeishu/utils/feishu_util.py` - `FeiShuUtil` for batch cross-sheet operations
 - `fastfeishu/utils/common.py` - High-level utilities including `batch_download_images()`, `sample_from_array()`, etc.
 - `fastfeishu/utils/partition_grid.py` - Smart grid partitioning algorithm for optimized batch writes
@@ -364,7 +400,7 @@ result = sample_from_array(labels, label_config={}, max_samples=2)
 - `fastfeishu/configs/properties.yaml` - API endpoint definitions
 
 **Exceptions:**
-- `fastfeishu/exceptions/exception.py` - `FeiShuException`, `FeiShuRequestException`, `FeiShuColumnNotExist`, `FeiShuStyleException`, etc.
+- `fastfeishu/exceptions/exception.py` - `FeiShuException`, `FeiShuRequestException`, `FeiShuColumnNotExist`, `FeiShuStyleException`, `FeiShuExportException`（含 `FeiShuExportTaskFailedException` / `FeiShuExportTimeoutException`）
 
 ## Common Development Patterns
 
@@ -372,7 +408,7 @@ result = sample_from_array(labels, label_config={}, max_samples=2)
 1. Define new class in `fastfeishu/models/type.py` inheriting from `FeiShuCellType`
 2. Implement `to_json()` method for serialization to Feishu API format
 3. Register in `CellTypeConverter.auto_convert()` if applicable
-4. Document usage in README.md
+4. Document usage in `docs/cell-types.md`（README 仅在新增文档条目时改动）
 
 ### Extending API Operations
 1. Add endpoint to `fastfeishu/configs/properties.yaml`
@@ -415,7 +451,7 @@ Detailed description (optional)
 | `[fix]` | Bug fix | `[fix] 修复写图片 bug，为 iterrows 方法增加读取方法引用` |
 | `[perf]` | Performance optimization | `[perf] 优化 write_row 方法和 request.py 内部请求方法代码结构` |
 | `[refactor]` | Code refactoring | `[refactor] 提取 helpers 模块消除循环依赖隐患` |
-| `[docs]` | Documentation | `[docs] 更新 README.md 文档` |
+| `[docs]` | Documentation | `[docs] 更新 docs/cell-types.md 文档` |
 | `[test]` | Tests | `[test] 增加单元测试覆盖率` |
 | `[chore]` | Build/tools | `[chore] 更新依赖版本` |
 | `[style]` | Code formatting | `[style] 统一代码缩进格式` |
@@ -475,7 +511,7 @@ git push origin dev
 
 **Testing & Updates:**
 - Unit tests (basic + edge cases)
-- Update README + API reference
+- Update the matching page in `docs/` + the method list in `docs/api-reference.md`
 
 ### Optimizing Iterator Methods
 
@@ -530,7 +566,7 @@ if header_value is not None and header_value != '':
 1. Respect layer architecture: helpers → models → core → utils
 2. Cache method results, avoid repeated calls
 3. Follow existing patterns before creating new ones
-4. README updates are mandatory, not optional
+4. `docs/*.md` 文档更新是必须的：用户可见能力对应到具体文档页；README 只维护索引与快速开始
 
 ### Integration Test Configuration Management
 
